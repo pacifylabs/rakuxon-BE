@@ -1,0 +1,33 @@
+# Local dependencies for the API. Postgres 16 because the isolation gate needs
+# FORCE ROW LEVEL SECURITY, and Redis for BullMQ.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: rakuxon-postgres
+    environment:
+      POSTGRES_USER: rakuxon
+      POSTGRES_PASSWORD: rakuxon
+      POSTGRES_DB: rakuxon
+    ports:
+      - '5433:5432'
+    volumes:
+      - rakuxon-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U rakuxon -d rakuxon']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: rakuxon-redis
+    ports:
+      - '6380:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  rakuxon-pgdata:

@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'stage/**', 'feature/**', 'fix/**']
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    # Real Postgres and Redis: RLS is a database feature and the isolation
+    # gate cannot prove anything against a mock.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: rakuxon
+          POSTGRES_PASSWORD: rakuxon
+          POSTGRES_DB: rakuxon
+        ports: ['5433:5432']
+        options: >-
+          --health-cmd "pg_isready -U rakuxon -d rakuxon"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6380:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://rakuxon:rakuxon@localhost:5433/rakuxon
+      DATABASE_SSL: 'false'
+      REDIS_URL: redis://localhost:6380
+      JWT_ACCESS_SECRET: ci-access-secret-that-is-long-enough-32
+      JWT_REFRESH_SECRET: ci-refresh-secret-that-is-different-32
+      WEB_APP_URL: http://localhost:3000
+      GIT_COMMIT_SHA: ${{ github.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit and integration tests
+        run: pnpm test
+
+      - name: End-to-end tests
+        run: pnpm test:e2e
+
+      # docs/03-tdd-guide.md: red here means no merge, no exceptions.
+      - name: Tenant isolation gate
+        run: pnpm test:isolation
+
+      - name: Build
+        run: pnpm build
