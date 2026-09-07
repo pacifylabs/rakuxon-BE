@@ -59,7 +59,7 @@ export class RefreshDto {
 }
 
 export class AuthUserDto {
-  @ApiProperty({ format: 'uuid' })
+  @ApiProperty({ type: String, format: 'uuid' })
   id!: string;
 
   @ApiProperty({ example: 'ada@northwind.example' })
@@ -71,7 +71,14 @@ export class AuthUserDto {
   @ApiProperty({ enum: Role, enumName: 'Role' })
   role!: Role;
 
-  @ApiProperty({ format: 'uuid', nullable: true, description: 'Null for a platform administrator.' })
+  /* `type` is required alongside `nullable`: without it Swagger emits a
+     schema with no type at all, which generates as Record<string, never>. */
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description: 'Null for a platform administrator.',
+  })
   tenantId!: string | null;
 }
 

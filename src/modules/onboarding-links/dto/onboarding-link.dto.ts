@@ -21,7 +21,7 @@ export class IssueOnboardingLinkDto {
 }
 
 export class OnboardingLinkDto {
-  @ApiProperty({ format: 'uuid' })
+  @ApiProperty({ type: String, format: 'uuid' })
   id!: string;
 
   @ApiProperty({
@@ -34,7 +34,7 @@ export class OnboardingLinkDto {
   @ApiProperty({ example: 'student@example.com' })
   inviteeEmail!: string;
 
-  @ApiProperty({ format: 'date-time' })
+  @ApiProperty({ type: String, format: 'date-time' })
   expiresAt!: string;
 }
 
@@ -45,7 +45,7 @@ export class ConsumeOnboardingLinkDto {
 }
 
 export class ConsumedLinkDto {
-  @ApiProperty({ format: 'uuid' })
+  @ApiProperty({ type: String, format: 'uuid' })
   tenantId!: string;
 
   @ApiProperty({ example: 'student@example.com' })
