@@ -1,8 +1,8 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { DataSource } from 'typeorm';
 
 import { PasswordResetToken } from '../../src/modules/auth/entities/password-reset-token.entity';
+import { adminDataSource } from '../helpers/admin-data-source';
 import { createTestApp, truncateIdentity, uniqueSlug } from '../helpers/create-test-app';
 import type { CapturingNotifications } from '../helpers/create-test-app';
 
@@ -27,7 +27,9 @@ describe('password reset', () => {
 
   /** The token is only ever sent by email, so tests read the row directly. */
   async function latestResetTokenHash(userId: string): Promise<PasswordResetToken> {
-    const repo = app.get(DataSource).getRepository(PasswordResetToken);
+    /* Owner connection: the credential tables are readable only on the
+       identity path, which is the point of their policy. */
+    const repo = (await adminDataSource()).getRepository(PasswordResetToken);
     const [row] = await repo.find({ where: { userId }, order: { createdAt: 'DESC' }, take: 1 });
     return row as PasswordResetToken;
   }

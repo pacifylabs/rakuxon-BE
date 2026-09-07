@@ -7,6 +7,7 @@ import { ConfigModule } from './common/config/config.module';
 import { HealthModule } from './common/health/health.module';
 import { NotificationsModule } from './common/notifications/notifications.module';
 import { RolesGuard } from './common/rbac/roles.guard';
+import { TenancyModule } from './common/tenancy/tenancy.module';
 import { TenantResolutionMiddleware } from './common/tenancy/tenant-resolution.middleware';
 import { buildDataSourceOptions } from './database/data-source';
 import { AuthModule } from './modules/auth/auth.module';
@@ -16,6 +17,7 @@ import { OnboardingLinksModule } from './modules/onboarding-links/onboarding-lin
   imports: [
     ConfigModule,
     TypeOrmModule.forRootAsync({ useFactory: () => buildDataSourceOptions() }),
+    TenancyModule,
     NotificationsModule,
     HealthModule,
     AuthModule,

@@ -9,6 +9,7 @@ const config: Config = {
   testEnvironment: 'node',
   moduleNameMapper: { '^@/(.*)$': '<rootDir>/src/$1' },
   setupFiles: ['<rootDir>/test/helpers/load-test-env.ts'],
+  setupFilesAfterEnv: ['<rootDir>/test/helpers/close-connections.ts'],
   testTimeout: 30_000,
 };
 

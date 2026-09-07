@@ -1,13 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
-import {
-  ConflictException,
-  Inject,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, IsNull, Repository } from 'typeorm';
+import { ConflictException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { EntityManager, IsNull, Repository } from 'typeorm';
 
 import { PasswordResetToken } from './entities/password-reset-token.entity';
 import { SsoIdentity } from './entities/sso-identity.entity';
@@ -22,23 +16,40 @@ import type { NotificationPort } from '../../common/notifications/notification.p
 import { Role, TenantStatus, UserStatus } from '../../contract/enums';
 import type { SsoProfile } from './sso/sso.port';
 import { Tenant } from '../tenants/entities/tenant.entity';
+import { TenantContext } from '../../common/tenancy/tenant-context';
 import { User } from '../users/entities/user.entity';
 import type { AuthTokensDto } from './dto/auth.dto';
 
+/** Repositories bound to a transaction that has the identity context set. */
+interface IdentityRepositories {
+  users: Repository<User>;
+  tenants: Repository<Tenant>;
+  refreshTokens: Repository<RefreshToken>;
+  resetTokens: Repository<PasswordResetToken>;
+  ssoIdentities: Repository<SsoIdentity>;
+  manager: EntityManager;
+}
+
+/**
+ * Everything on the identity path.
+ *
+ * None of these operations can know a tenant in advance — establishing which
+ * tenant someone belongs to is what they are for. So each one runs inside
+ * `runInIdentityContext`, the single narrow exemption row-level security
+ * grants, and every repository below comes from that transaction's manager.
+ *
+ * There are deliberately no `@InjectRepository` fields here. One would look
+ * ordinary, run outside the context, and return nothing at all — a silently
+ * empty result rather than an error.
+ */
 @Injectable()
 export class AuthService {
   constructor(
-    @InjectRepository(User) private readonly users: Repository<User>,
-    @InjectRepository(Tenant) private readonly tenants: Repository<Tenant>,
-    @InjectRepository(RefreshToken) private readonly refreshTokens: Repository<RefreshToken>,
-    @InjectRepository(PasswordResetToken)
-    private readonly resetTokens: Repository<PasswordResetToken>,
-    @InjectRepository(SsoIdentity) private readonly ssoIdentities: Repository<SsoIdentity>,
     @Inject(NOTIFICATION_PORT) private readonly notifications: NotificationPort,
     @Inject(ENV) private readonly env: Env,
     private readonly passwords: PasswordService,
     private readonly tokens: TokenService,
-    private readonly dataSource: DataSource,
+    private readonly tenancy: TenantContext,
   ) {}
 
   /**
@@ -55,15 +66,18 @@ export class AuthService {
   }): Promise<AuthTokensDto> {
     const slug = input.slug.toLowerCase();
 
-    if (await this.tenants.exist({ where: { slug } })) {
-      throw new ConflictException('That subdomain is already taken.');
-    }
-
+    /* Hashed before the transaction opens: argon2 is deliberately slow, and
+       holding a pooled connection for the duration would starve the pool
+       under load. */
     const passwordHash = await this.passwords.hash(input.password);
 
-    const user = await this.dataSource.transaction(async (manager) => {
-      const tenant = await manager.save(
-        manager.create(Tenant, {
+    const user = await this.identity(async ({ tenants, users }) => {
+      if (await tenants.exist({ where: { slug } })) {
+        throw new ConflictException('That subdomain is already taken.');
+      }
+
+      const tenant = await tenants.save(
+        tenants.create({
           name: input.agencyName,
           slug,
           /* Pending until vetted — see the admin vetting flow in stage 5. */
@@ -71,8 +85,8 @@ export class AuthService {
         }),
       );
 
-      return manager.save(
-        manager.create(User, {
+      return users.save(
+        users.create({
           tenantId: tenant.id,
           email: input.email,
           fullName: input.fullName,
@@ -88,12 +102,16 @@ export class AuthService {
 
   async login(email: string, password: string): Promise<AuthTokensDto> {
     /* passwordHash is select:false, so ask for it explicitly. */
-    const user = await this.users
-      .createQueryBuilder('user')
-      .addSelect('user.passwordHash')
-      .where('user.email = :email', { email })
-      .getOne();
+    const user = await this.identity(({ users }) =>
+      users
+        .createQueryBuilder('user')
+        .addSelect('user.passwordHash')
+        .where('user.email = :email', { email })
+        .getOne(),
+    );
 
+    /* Verified after the lookup transaction has closed, for the same reason
+       the hash above is computed before one opens. */
     const valid = await this.passwords.verify(user?.passwordHash, password);
 
     /*
@@ -122,14 +140,23 @@ export class AuthService {
    */
   async refresh(presentedToken: string): Promise<AuthTokensDto> {
     const tokenHash = this.tokens.hashRefreshToken(presentedToken);
-    const stored = await this.refreshTokens.findOne({ where: { tokenHash } });
+
+    const stored = await this.identity(({ refreshTokens }) =>
+      refreshTokens.findOne({ where: { tokenHash } }),
+    );
 
     if (!stored) {
       throw new UnauthorizedException('That refresh token is not valid.');
     }
 
     if (stored.revokedAt || stored.replacedByTokenId) {
-      await this.revokeFamily(stored.familyId);
+      /*
+       * Revoked in its own transaction, then thrown. Doing both inside one
+       * would roll the revocation back on the way out — the replay would be
+       * reported and the stolen family would stay alive.
+       */
+      await this.identity((repos) => this.revokeFamily(repos, stored.familyId));
+
       throw new UnauthorizedException(
         'That refresh token has already been used. All sessions have been ended.',
       );
@@ -139,7 +166,8 @@ export class AuthService {
       throw new UnauthorizedException('That refresh token has expired.');
     }
 
-    const user = await this.users.findOne({ where: { id: stored.userId } });
+    const user = await this.identity(({ users }) => users.findOne({ where: { id: stored.userId } }));
+
     if (!user || user.status !== UserStatus.Active) {
       throw new UnauthorizedException('This account is not active.');
     }
@@ -149,9 +177,11 @@ export class AuthService {
 
   /** Ends the presented session. Unknown tokens succeed: logout is idempotent. */
   async logout(presentedToken: string): Promise<void> {
-    await this.refreshTokens.update(
-      { tokenHash: this.tokens.hashRefreshToken(presentedToken) },
-      { revokedAt: new Date() },
+    await this.identity(({ refreshTokens }) =>
+      refreshTokens.update(
+        { tokenHash: this.tokens.hashRefreshToken(presentedToken) },
+        { revokedAt: new Date() },
+      ),
     );
   }
 
@@ -165,17 +195,23 @@ export class AuthService {
    * reason reset flows leak.
    */
   async requestPasswordReset(email: string): Promise<void> {
-    const user = await this.users.findOne({ where: { email } });
-    if (!user || user.status !== UserStatus.Active) return;
-
     const token = randomBytes(32).toString('base64url');
     /* One hour: a reset link sits in an inbox, which is far more exposed than
        an app's memory. */
     const expiresAt = new Date(Date.now() + 3_600_000);
 
-    await this.resetTokens.save(
-      this.resetTokens.create({ userId: user.id, tokenHash: this.sha256(token), expiresAt }),
-    );
+    const user = await this.identity(async ({ users, resetTokens }) => {
+      const found = await users.findOne({ where: { email } });
+      if (!found || found.status !== UserStatus.Active) return null;
+
+      await resetTokens.save(
+        resetTokens.create({ userId: found.id, tokenHash: this.sha256(token), expiresAt }),
+      );
+
+      return found;
+    });
+
+    if (!user) return;
 
     await this.notifications.sendPasswordReset({
       to: user.email,
@@ -194,16 +230,16 @@ export class AuthService {
    * alive would defeat the whole exercise.
    */
   async confirmPasswordReset(token: string, newPassword: string): Promise<void> {
-    const grant = await this.resetTokens.findOne({ where: { tokenHash: this.sha256(token) } });
-
-    const unusable = !grant || grant.consumedAt || grant.expiresAt.getTime() <= Date.now();
-    if (unusable) {
-      throw new UnauthorizedException('That reset link is not valid.');
-    }
-
     const passwordHash = await this.passwords.hash(newPassword);
 
-    await this.dataSource.transaction(async (manager) => {
+    await this.identity(async ({ resetTokens, manager }) => {
+      const grant = await resetTokens.findOne({ where: { tokenHash: this.sha256(token) } });
+
+      const unusable = !grant || grant.consumedAt || grant.expiresAt.getTime() <= Date.now();
+      if (unusable) {
+        throw new UnauthorizedException('That reset link is not valid.');
+      }
+
       await manager.update(User, grant.userId, { passwordHash });
       await manager.update(PasswordResetToken, grant.id, { consumedAt: new Date() });
       await manager.update(
@@ -231,54 +267,69 @@ export class AuthService {
       );
     }
 
-    const existingIdentity = await this.ssoIdentities.findOne({
-      where: { provider, providerAccountId: profile.providerAccountId },
-    });
+    const user = await this.identity(async ({ users, ssoIdentities }) => {
+      const existingIdentity = await ssoIdentities.findOne({
+        where: { provider, providerAccountId: profile.providerAccountId },
+      });
 
-    if (existingIdentity) {
-      const user = await this.users.findOne({ where: { id: existingIdentity.userId } });
-      if (!user || user.status !== UserStatus.Active) {
+      if (existingIdentity) {
+        const linked = await users.findOne({ where: { id: existingIdentity.userId } });
+        if (!linked || linked.status !== UserStatus.Active) {
+          throw new UnauthorizedException('This account is not active.');
+        }
+        return linked;
+      }
+
+      const found = await users.findOne({ where: { email: profile.email } });
+      if (!found) {
+        /* No self-service tenant creation through SSO: an agency is created
+           deliberately, and a student arrives through an invitation link. */
+        throw new UnauthorizedException('There is no account for that address yet.');
+      }
+
+      if (found.status !== UserStatus.Active) {
         throw new UnauthorizedException('This account is not active.');
       }
-      return this.issueTokens(user);
-    }
 
-    const user = await this.users.findOne({ where: { email: profile.email } });
-    if (!user) {
-      /* No self-service tenant creation through SSO: an agency is created
-         deliberately, and a student arrives through an invitation link. */
-      throw new UnauthorizedException('There is no account for that address yet.');
-    }
+      await ssoIdentities.save(
+        ssoIdentities.create({
+          userId: found.id,
+          provider,
+          providerAccountId: profile.providerAccountId,
+        }),
+      );
 
-    if (user.status !== UserStatus.Active) {
-      throw new UnauthorizedException('This account is not active.');
-    }
-
-    await this.ssoIdentities.save(
-      this.ssoIdentities.create({
-        userId: user.id,
-        provider,
-        providerAccountId: profile.providerAccountId,
-      }),
-    );
+      return found;
+    });
 
     return this.issueTokens(user);
+  }
+
+  /** Opens an identity-context transaction and hands back repositories on it. */
+  private async identity<T>(work: (repos: IdentityRepositories) => Promise<T>): Promise<T> {
+    return this.tenancy.runInIdentityContext((manager) =>
+      work({
+        users: manager.getRepository(User),
+        tenants: manager.getRepository(Tenant),
+        refreshTokens: manager.getRepository(RefreshToken),
+        resetTokens: manager.getRepository(PasswordResetToken),
+        ssoIdentities: manager.getRepository(SsoIdentity),
+        manager,
+      }),
+    );
   }
 
   private sha256(value: string): string {
     return createHash('sha256').update(value).digest('hex');
   }
 
-  private async revokeFamily(familyId: string): Promise<void> {
+  private async revokeFamily(repos: IdentityRepositories, familyId: string): Promise<void> {
     /*
      * IsNull(), not undefined: TypeORM drops undefined criteria in some places
      * and compiles it to `revokedAt = NULL` in others, and `= NULL` matches no
      * row — which silently turned family revocation into a no-op.
      */
-    await this.refreshTokens.update(
-      { familyId, revokedAt: IsNull() },
-      { revokedAt: new Date() },
-    );
+    await repos.refreshTokens.update({ familyId, revokedAt: IsNull() }, { revokedAt: new Date() });
   }
 
   private async issueTokens(user: User, rotating?: RefreshToken): Promise<AuthTokensDto> {
@@ -290,22 +341,25 @@ export class AuthService {
     });
 
     const minted = this.tokens.mintRefreshToken();
-    const saved = await this.refreshTokens.save(
-      this.refreshTokens.create({
-        userId: user.id,
-        tokenHash: minted.tokenHash,
-        /* A rotation stays in its family; a fresh login starts a new one. */
-        familyId: rotating?.familyId ?? randomUUID(),
-        expiresAt: minted.expiresAt,
-      }),
-    );
 
-    if (rotating) {
-      await this.refreshTokens.update(rotating.id, {
-        replacedByTokenId: saved.id,
-        revokedAt: new Date(),
-      });
-    }
+    await this.identity(async ({ refreshTokens }) => {
+      const saved = await refreshTokens.save(
+        refreshTokens.create({
+          userId: user.id,
+          tokenHash: minted.tokenHash,
+          /* A rotation stays in its family; a fresh login starts a new one. */
+          familyId: rotating?.familyId ?? randomUUID(),
+          expiresAt: minted.expiresAt,
+        }),
+      );
+
+      if (rotating) {
+        await refreshTokens.update(rotating.id, {
+          replacedByTokenId: saved.id,
+          revokedAt: new Date(),
+        });
+      }
+    });
 
     return {
       accessToken,

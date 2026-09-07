@@ -1,7 +1,7 @@
 import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { DataSource } from 'typeorm';
 
+import { adminDataSource, truncateAll } from './admin-data-source';
 import { NOTIFICATION_PORT } from '../../src/common/notifications/notification.port';
 import { AppModule } from '../../src/app.module';
 import type {
@@ -57,19 +57,22 @@ export async function createTestApp(): Promise<TestApp> {
   );
 
   await app.init();
-  await app.get(DataSource).runMigrations();
+
+  /* Migrations run on the owner connection: the application role has no DDL
+     rights, which is the point. */
+  await (await adminDataSource()).runMigrations();
 
   return { app, notifications };
 }
 
-/** Empties the identity tables between suites, leaving the schema in place. */
-export async function truncateIdentity(app: INestApplication): Promise<void> {
-  await app
-    .get(DataSource)
-    .query(
-      'TRUNCATE TABLE "password_reset_tokens", "sso_identities", "onboarding_links", ' +
-        '"refresh_tokens", "users", "tenants" CASCADE',
-    );
+/**
+ * Empties the identity tables between suites, leaving the schema in place.
+ *
+ * Takes the app only to keep the call sites unchanged; the work happens on the
+ * owner connection, because TRUNCATE is not granted to the application role.
+ */
+export async function truncateIdentity(_app?: INestApplication): Promise<void> {
+  await truncateAll();
 }
 
 /** A slug that cannot collide with a parallel run. */

@@ -5,16 +5,23 @@ import 'dotenv/config';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import helmet from 'helmet';
+import { DataSource } from 'typeorm';
 
 import { AppModule } from './app.module';
 import { ENV } from './common/config/config.module';
 import { corsOrigins } from './common/config/env.schema';
 import type { Env } from './common/config/env.schema';
+import { assertRlsEnforceable } from './common/tenancy/rls-enforcement';
 import { setupSwagger } from './swagger';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   const env = app.get<Env>(ENV);
+
+  /* Before anything can serve a request. A role that bypasses row-level
+     security produces no error, no warning and no visible symptom — every
+     query simply returns every tenant's rows. */
+  await assertRlsEnforceable(app.get(DataSource));
 
   app.use(helmet());
 

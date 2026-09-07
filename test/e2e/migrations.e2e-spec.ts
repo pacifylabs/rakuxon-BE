@@ -10,7 +10,8 @@ describe('database migrations', () => {
   let dataSource: DataSource;
 
   beforeAll(async () => {
-    dataSource = new DataSource(buildDataSourceOptions());
+    /* Owner connection: migrations are DDL, and the runtime role has none. */
+    dataSource = new DataSource(buildDataSourceOptions(undefined, { admin: true }));
     await dataSource.initialize();
   });
 

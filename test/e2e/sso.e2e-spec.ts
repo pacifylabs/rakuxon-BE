@@ -2,8 +2,8 @@ import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import request from 'supertest';
-import { DataSource } from 'typeorm';
 
+import { adminDataSource } from '../helpers/admin-data-source';
 import { AppModule } from '../../src/app.module';
 import { SSO_PROVIDERS } from '../../src/modules/auth/sso/sso.port';
 import { UserStatus } from '../../src/contract/enums';
@@ -48,7 +48,8 @@ describe('single sign-on', () => {
       new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
     );
     await app.init();
-    await app.get(DataSource).runMigrations();
+    /* Owner connection: the runtime role has no DDL rights by design. */
+    await (await adminDataSource()).runMigrations();
   });
 
   afterAll(async () => {
@@ -104,7 +105,9 @@ describe('single sign-on', () => {
 
     expect(second.body.user.id).toBe(first.body.user.id);
 
-    const users = await app.get(DataSource).getRepository(User).count({
+    /* Read on the owner connection: rows are invisible to the runtime role
+       outside a tenant context, which is the guarantee, not a problem here. */
+    const users = await (await adminDataSource()).getRepository(User).count({
       where: { email: session.user.email },
     });
     expect(users).toBe(1);
@@ -137,8 +140,7 @@ describe('single sign-on', () => {
 
   it('refuses a suspended account', async () => {
     const session = await registerAgency();
-    await app
-      .get(DataSource)
+    await (await adminDataSource())
       .getRepository(User)
       .update({ id: session.user.id }, { status: UserStatus.Suspended });
 

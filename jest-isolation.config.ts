@@ -13,9 +13,10 @@ const config: Config = {
   testEnvironment: 'node',
   moduleNameMapper: { '^@/(.*)$': '<rootDir>/src/$1' },
   setupFiles: ['<rootDir>/test/helpers/load-test-env.ts'],
+  setupFilesAfterEnv: ['<rootDir>/test/helpers/close-connections.ts'],
   testTimeout: 30_000,
-  /* An empty gate must fail loudly, not pass silently, once Stage 2 lands. */
-  passWithNoTests: true,
+  /* An empty gate would pass, which is the one result it must never give. */
+  passWithNoTests: false,
 };
 
 export default config;

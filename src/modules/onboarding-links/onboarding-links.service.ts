@@ -1,21 +1,32 @@
 import { createHash, randomBytes } from 'node:crypto';
 
 import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { IsNull } from 'typeorm';
 
 import { OnboardingLink } from './entities/onboarding-link.entity';
 import { ENV } from '../../common/config/config.module';
 import type { Env } from '../../common/config/env.schema';
+import { TenantContext } from '../../common/tenancy/tenant-context';
 import type { ConsumedLinkDto, OnboardingLinkDto } from './dto/onboarding-link.dto';
 
 const DEFAULT_EXPIRY_DAYS = 14;
 
+/**
+ * Invitations, and the first module to use both database contexts.
+ *
+ * Issuing and revoking happen on behalf of a signed-in counselor, so they run
+ * tenant-scoped: the policy on `onboarding_links` — not this code — is what
+ * stops one agency touching another's invitations.
+ *
+ * Redeeming cannot. The student has no account and no subdomain yet; the
+ * token is the only thing identifying the agency, and reading it is how the
+ * tenant gets discovered. That single method runs on the identity path.
+ */
 @Injectable()
 export class OnboardingLinksService {
   constructor(
-    @InjectRepository(OnboardingLink) private readonly links: Repository<OnboardingLink>,
     @Inject(ENV) private readonly env: Env,
+    private readonly tenancy: TenantContext,
   ) {}
 
   /**
@@ -35,15 +46,19 @@ export class OnboardingLinksService {
     const token = randomBytes(32).toString('base64url');
     const days = input.expiresInDays ?? DEFAULT_EXPIRY_DAYS;
 
-    const saved = await this.links.save(
-      this.links.create({
-        tenantId: input.tenantId,
-        issuedByUserId: input.issuedByUserId,
-        inviteeEmail: input.inviteeEmail,
-        tokenHash: this.hash(token),
-        expiresAt: new Date(Date.now() + days * 86_400_000),
-      }),
-    );
+    const saved = await this.tenancy.runInTenantContext(input.tenantId, (manager) => {
+      const links = manager.getRepository(OnboardingLink);
+
+      return links.save(
+        links.create({
+          tenantId: input.tenantId,
+          issuedByUserId: input.issuedByUserId,
+          inviteeEmail: input.inviteeEmail,
+          tokenHash: this.hash(token),
+          expiresAt: new Date(Date.now() + days * 86_400_000),
+        }),
+      );
+    });
 
     return {
       id: saved.id,
@@ -61,23 +76,33 @@ export class OnboardingLinksService {
    * which guesses were close.
    */
   async consume(token: string): Promise<ConsumedLinkDto> {
-    const link = await this.links.findOne({ where: { tokenHash: this.hash(token) } });
+    return this.tenancy.runInIdentityContext(async (manager) => {
+      const links = manager.getRepository(OnboardingLink);
+      const link = await links.findOne({ where: { tokenHash: this.hash(token) } });
 
-    const unusable =
-      !link || link.revokedAt || link.consumedAt || link.expiresAt.getTime() <= Date.now();
+      const unusable =
+        !link || link.revokedAt || link.consumedAt || link.expiresAt.getTime() <= Date.now();
 
-    if (unusable) {
-      throw new UnauthorizedException('That invitation link is not valid.');
-    }
+      if (unusable) {
+        throw new UnauthorizedException('That invitation link is not valid.');
+      }
 
-    await this.links.update(link.id, { consumedAt: new Date() });
+      await links.update(link.id, { consumedAt: new Date() });
 
-    return { tenantId: link.tenantId, inviteeEmail: link.inviteeEmail };
+      return { tenantId: link.tenantId, inviteeEmail: link.inviteeEmail };
+    });
   }
 
   async revoke(id: string, tenantId: string): Promise<void> {
-    /* IsNull(), not undefined — see the note in auth.service.ts. */
-    await this.links.update({ id, tenantId, revokedAt: IsNull() }, { revokedAt: new Date() });
+    await this.tenancy.runInTenantContext(tenantId, async (manager) => {
+      /* IsNull(), not undefined — see the note in auth.service.ts. The tenantId
+         clause is belt to the policy's braces: it stays because it also stops
+         a counselor revoking a link from another tenant were the policy ever
+         dropped, and it costs nothing. */
+      await manager
+        .getRepository(OnboardingLink)
+        .update({ id, tenantId, revokedAt: IsNull() }, { revokedAt: new Date() });
+    });
   }
 
   private hash(token: string): string {

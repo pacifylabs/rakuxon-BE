@@ -6,7 +6,12 @@
  */
 const defaults: Record<string, string> = {
   NODE_ENV: 'test',
-  DATABASE_URL: 'postgresql://rakuxon:rakuxon@localhost:5433/rakuxon',
+  /* The app role, not the owner: row-level security does not apply to a
+     superuser, so a suite run as one would prove nothing. */
+  DATABASE_URL: 'postgresql://rakuxon_app:rakuxon_app@localhost:5433/rakuxon',
+  DATABASE_ADMIN_URL: 'postgresql://rakuxon:rakuxon@localhost:5433/rakuxon',
+  DATABASE_APP_USER: 'rakuxon_app',
+  DATABASE_APP_PASSWORD: 'rakuxon_app',
   DATABASE_SSL: 'false',
   REDIS_URL: 'redis://localhost:6380',
   JWT_ACCESS_SECRET: 'test-access-secret-that-is-long-enough-32',

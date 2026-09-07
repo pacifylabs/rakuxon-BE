@@ -37,6 +37,7 @@ CORS_ALLOWED_ORIGINS=      # the Vercel FE domains
 2. Add **PostgreSQL** and **Redis** plugins; Railway injects `DATABASE_URL` / `REDIS_URL`.
 3. Set the env vars above.
 4. Start command: run migrations then boot — `pnpm migration:run && node dist/main.js`.
+   Migrations use `DATABASE_ADMIN_URL`; the process itself uses `DATABASE_URL`.
 5. Enable per-branch deploys so each `stage/*` branch gets a preview environment.
 
 ## Render (option B)
@@ -49,6 +50,12 @@ CORS_ALLOWED_ORIGINS=      # the Vercel FE domains
 
 - Run TypeORM migrations on deploy (in the start command), never `synchronize: true` in production.
 - **RLS policies are migrations** — they ship with the schema.
+- **`DATABASE_URL` must not be an owner or superuser account.** Postgres exempts
+  superusers and `BYPASSRLS` roles from row-level security silently, so those
+  credentials leave every policy in place and enforcing nothing. Provision the
+  app role once with `pnpm db:provision`, give migrations `DATABASE_ADMIN_URL`,
+  and give the service `DATABASE_URL`. The API refuses to boot otherwise — see
+  `docs/09-tenant-isolation.md`.
 
 ## Branch → environment mapping
 
