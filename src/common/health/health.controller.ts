@@ -2,6 +2,7 @@ import { Controller, Get, Inject } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { DataSource } from 'typeorm';
 
+import { Public } from '../auth/public.decorator';
 import { ENV } from '../config/config.module';
 import type { Env } from '../config/env.schema';
 import { HealthResponseDto } from './dto/health-response.dto';
@@ -18,12 +19,14 @@ export class HealthController {
     private readonly dataSource: DataSource,
   ) {}
 
+  @Public()
   @Get()
   @ApiOperation({
     summary: 'Liveness and dependency check',
     description:
       'Returns build information and the reachability of each dependency. Always 200 so a ' +
-      'load balancer can distinguish "process is up" from "database is down" by reading the body.',
+      'load balancer can distinguish "process is up" from "database is down" by reading the ' +
+      'body. Unauthenticated, because a probe has no credentials.',
   })
   @ApiOkResponse({ type: HealthResponseDto })
   async check(): Promise<HealthResponseDto> {

@@ -16,6 +16,8 @@
 
 **Gate:** `docker-compose up` + health green; CI runs and passes an empty `test:isolation`.
 
+> **Status: green.** Env validation, TypeORM datasource with migrations, `GET /v1/health`, docker-compose (Postgres 16 + Redis 7), OpenAPI at `/docs`, and CI running typecheck / test / e2e / isolation / build.
+
 ---
 
 ## Stage 1 — Identity, Access & Tenancy `branch: stage/1-auth-tenancy`
@@ -32,6 +34,8 @@
 7. Test: generate onboarding link → token unique, expiry set; expired/revoked token rejected → implement link service.
 
 **Gate:** auth + RBAC + tenant resolution all green; SSO happy-path passes.
+
+> **Status: partial.** Register / login / refresh-with-rotation / logout / me, argon2id hashing, refresh-token families with replay detection, `@Roles` guard, subdomain tenant resolution and onboarding-link issue/consume/revoke are green (43 unit, 39 e2e). **Not yet done:** password reset, the SSO adapter, and per-user data scoping — scoping lands with the RLS work in stage 2, where it can be enforced at the database rather than only in a service.
 
 ---
 

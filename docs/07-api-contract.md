@@ -3,6 +3,14 @@
 
 > Two separate repos means the contract must be shared **explicitly**. The BE owns it; the FE consumes a versioned copy. This prevents the FE and BE drifting.
 
+> **Decided (stage 1).** The OpenAPI route below is the one in use. `@nestjs/swagger`
+> serves the document at `/docs` (UI) and `/docs-json` (raw), and the FE generates its
+> client from it. The published-package option is not being pursued: one artefact, and
+> it is produced by the running API so it cannot drift from it.
+>
+> Swagger is also the manual test surface — *Authorize* takes a bearer token and keeps
+> it across reloads, so the whole auth flow can be exercised from the browser.
+
 ## Chosen mechanism (recommended)
 
 **Publish a versioned package** `@rakuxon/contract` from the BE (`src/contract/`) to a private registry (GitHub Packages), containing shared **DTOs + enums** (no logic). The FE depends on it and re-exports through its own `packages/contract`.
