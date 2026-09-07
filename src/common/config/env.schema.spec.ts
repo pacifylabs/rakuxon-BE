@@ -1,4 +1,4 @@
-import { EnvValidationError, validateEnv } from './env.schema';
+import { EnvValidationError, corsOrigins, validateEnv } from './env.schema';
 
 const valid = {
   NODE_ENV: 'test',
@@ -62,8 +62,41 @@ describe('validateEnv', () => {
     expect(() => validateEnv({ ...valid, DATABASE_URL: 'not-a-url' })).toThrow(EnvValidationError);
   });
 
+  it('leaves CORS_ORIGINS optional', () => {
+    expect(() => validateEnv(valid)).not.toThrow();
+  });
+
   it('freezes the result, so nothing can mutate config at runtime', () => {
     const env = validateEnv(valid);
     expect(Object.isFrozen(env)).toBe(true);
+  });
+});
+
+describe('corsOrigins', () => {
+  it('always includes the canonical web address', () => {
+    expect(corsOrigins(validateEnv(valid))).toEqual(['http://localhost:3000']);
+  });
+
+  it('adds every configured origin', () => {
+    const env = validateEnv({
+      ...valid,
+      CORS_ORIGINS: 'http://localhost:3002, http://localhost:3003',
+    });
+    // Five frontend apps means five origins; one allowed value blocks four.
+    expect(corsOrigins(env)).toEqual([
+      'http://localhost:3000',
+      'http://localhost:3002',
+      'http://localhost:3003',
+    ]);
+  });
+
+  it('ignores blanks from a trailing comma', () => {
+    const env = validateEnv({ ...valid, CORS_ORIGINS: 'http://localhost:3002,,' });
+    expect(corsOrigins(env)).toEqual(['http://localhost:3000', 'http://localhost:3002']);
+  });
+
+  it('does not repeat the canonical address if it is listed again', () => {
+    const env = validateEnv({ ...valid, CORS_ORIGINS: 'http://localhost:3000' });
+    expect(corsOrigins(env)).toEqual(['http://localhost:3000']);
   });
 });

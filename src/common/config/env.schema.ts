@@ -26,7 +26,17 @@ export const envSchema = z.object({
   JWT_ACCESS_TTL: z.coerce.number().int().positive().default(900),
   JWT_REFRESH_TTL: z.coerce.number().int().positive().default(1_209_600),
 
+  /** Where links in emails point. One canonical origin. */
   WEB_APP_URL: z.string().url('WEB_APP_URL must be a valid URL'),
+
+  /**
+   * Origins allowed to call the API from a browser.
+   *
+   * A list, not a single value: the frontend is five separate apps on five
+   * origins (docs/01-prd.md), so allowing only WEB_APP_URL blocks every one
+   * of them but the marketing site. Defaults to WEB_APP_URL alone.
+   */
+  CORS_ORIGINS: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -60,4 +70,14 @@ export function validateEnv(source: Record<string, unknown>): Env {
   }
 
   return Object.freeze(result.data);
+}
+
+/** The allowed browser origins, with WEB_APP_URL always included. */
+export function corsOrigins(env: Env): string[] {
+  const configured = (env.CORS_ORIGINS ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  return [...new Set([env.WEB_APP_URL, ...configured])];
 }

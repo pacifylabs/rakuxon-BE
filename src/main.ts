@@ -8,6 +8,7 @@ import helmet from 'helmet';
 
 import { AppModule } from './app.module';
 import { ENV } from './common/config/config.module';
+import { corsOrigins } from './common/config/env.schema';
 import type { Env } from './common/config/env.schema';
 import { setupSwagger } from './swagger';
 
@@ -17,8 +18,9 @@ async function bootstrap(): Promise<void> {
 
   app.use(helmet());
 
-  /* The FE is a separate origin and sends its bearer token explicitly. */
-  app.enableCors({ origin: env.WEB_APP_URL, credentials: true });
+  /* Each frontend app is its own origin and sends its bearer token
+     explicitly, so the allow-list has to name all of them. */
+  app.enableCors({ origin: corsOrigins(env), credentials: true });
 
   /* URI versioning, per docs/07-api-contract.md: every route is /v1/... */
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });

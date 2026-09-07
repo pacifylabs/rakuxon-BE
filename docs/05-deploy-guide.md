@@ -67,3 +67,18 @@ CORS_ALLOWED_ORIGINS=      # the Vercel FE domains
 
 - Separate the web process from BullMQ workers when document/AI volume grows.
 - Watch per-tenant metering for noisy neighbors; add per-tenant rate limits.
+
+
+## CORS
+
+The frontend is five separate apps on five origins, so the API takes a list.
+`WEB_APP_URL` is the canonical address used for links in emails and is always
+allowed; `CORS_ORIGINS` is a comma-separated list of the rest.
+
+```
+WEB_APP_URL=https://rakuxon.com
+CORS_ORIGINS=https://app.rakuxon.com,https://apply.rakuxon.com,https://schools.rakuxon.com,https://admin.rakuxon.com
+```
+
+Allowing only `WEB_APP_URL` blocks every app but the marketing site, and the
+symptom in the browser is an unhelpful "could not reach the server".
