@@ -8,6 +8,32 @@ import { z } from 'zod';
  * an undefined halfway through a request. Secrets are required with no
  * fallback, because a default secret is worse than a crash.
  */
+/**
+ * One address, not a list.
+ *
+ * These values end up inside password-reset links, where a comma-separated
+ * list is meaningless. A deploy that sets one to a list gets told exactly that,
+ * and pointed at CORS_ORIGINS — "must be a valid URL" is true but leaves the
+ * reader guessing which part of their value was wrong.
+ */
+const singleUrl = (name: string) =>
+  /* superRefine, not chained refines: those all run, so one wrong value
+     produced three lines about itself and buried the useful one. */
+  z.string().superRefine((value, ctx) => {
+    const fail = (message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+
+    if (value.includes(',')) {
+      return fail(
+        `${name} takes a single URL, not a list. Put additional browser origins in CORS_ORIGINS.`,
+      );
+    }
+    if (!/^https?:\/\//.test(value)) {
+      return fail(`${name} needs a scheme, e.g. https://example.com`);
+    }
+    if (!URL.canParse(value)) return fail(`${name} must be a valid URL`);
+    return undefined;
+  });
+
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3001),
@@ -46,7 +72,7 @@ export const envSchema = z.object({
   JWT_REFRESH_TTL: z.coerce.number().int().positive().default(1_209_600),
 
   /** Where links in emails point. One canonical origin. */
-  WEB_APP_URL: z.string().url('WEB_APP_URL must be a valid URL'),
+  WEB_APP_URL: singleUrl('WEB_APP_URL'),
 
   /**
    * Where each audience signs in.
@@ -55,9 +81,9 @@ export const envSchema = z.object({
    * uses. Sending an agency admin to the marketing site, which has no reset
    * screen, is a dead end. Each falls back to WEB_APP_URL.
    */
-  PARTNER_APP_URL: z.string().url().optional(),
-  INSTITUTION_APP_URL: z.string().url().optional(),
-  ADMIN_APP_URL: z.string().url().optional(),
+  PARTNER_APP_URL: singleUrl('PARTNER_APP_URL').optional(),
+  INSTITUTION_APP_URL: singleUrl('INSTITUTION_APP_URL').optional(),
+  ADMIN_APP_URL: singleUrl('ADMIN_APP_URL').optional(),
 
   /**
    * Origins allowed to call the API from a browser.
@@ -66,7 +92,25 @@ export const envSchema = z.object({
    * origins (docs/01-prd.md), so allowing only WEB_APP_URL blocks every one
    * of them but the marketing site. Defaults to WEB_APP_URL alone.
    */
-  CORS_ORIGINS: z.string().optional(),
+  CORS_ORIGINS: z
+    .string()
+    .optional()
+    .refine(
+      (value) =>
+        !value ||
+        value
+          .split(',')
+          .map((origin) => origin.trim())
+          .filter(Boolean)
+          .every((origin) => /^https?:\/\/[^/]+$/.test(origin)),
+      {
+        /* A browser always sends `Origin: scheme://host[:port]`. A bare
+           hostname matches nothing and shows up much later as an unexplained
+           CORS failure in someone's console, so it is caught here instead. */
+        message:
+          'CORS_ORIGINS entries each need a scheme and no path, e.g. https://app.example.com',
+      },
+    ),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -14,7 +14,11 @@ let shared: DataSource | undefined;
 
 export async function adminDataSource(): Promise<DataSource> {
   if (!shared) {
-    shared = new DataSource(buildDataSourceOptions(undefined, { admin: true }));
+    const options = buildDataSourceOptions(undefined, { admin: true });
+    /* Checked before connecting, not before truncating: migrations run on this
+       connection too, and a migration against production is as bad as a wipe. */
+    assertLocalDatabase((options as { url?: string }).url ?? '');
+    shared = new DataSource(options);
     await shared.initialize();
   }
 
@@ -24,6 +28,36 @@ export async function adminDataSource(): Promise<DataSource> {
 export async function closeAdminDataSource(): Promise<void> {
   await shared?.destroy();
   shared = undefined;
+}
+
+/**
+ * Hosts the destructive helpers are allowed to touch.
+ *
+ * A local `.env` pointed at a hosted database is not exotic — it is what
+ * happens the first time someone debugs against staging. The suite TRUNCATEs
+ * between files, so without this check that is a production wipe launched by
+ * `pnpm test`. It was caught once by an unrelated validation error, which is
+ * not a control.
+ */
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', 'postgres', 'db']);
+
+function assertLocalDatabase(url: string): void {
+  const host = (() => {
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return '';
+    }
+  })();
+
+  if (LOCAL_HOSTS.has(host)) return;
+
+  throw new Error(
+    `Refusing to TRUNCATE: DATABASE_ADMIN_URL points at "${host || 'an unparseable host'}", ` +
+      'which is not a local database. The test suite empties tables between files, so running ' +
+      'it against a hosted database would destroy real data. Point .env at docker-compose ' +
+      '(localhost:5433) before running tests.',
+  );
 }
 
 /** Empties every table the suites write to, leaving the schema in place. */

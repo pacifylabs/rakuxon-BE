@@ -62,6 +62,41 @@ describe('validateEnv', () => {
     expect(() => validateEnv({ ...valid, DATABASE_URL: 'not-a-url' })).toThrow(EnvValidationError);
   });
 
+  it('says so when an app URL is given a comma-separated list', () => {
+    /*
+     * A real deploy set WEB_APP_URL to "http://localhost:3000,site.vercel.app"
+     * and got "must be a valid URL", which is true and unhelpful. These fields
+     * are one canonical address each — they end up inside password-reset links,
+     * where a list is meaningless — and the list belongs in CORS_ORIGINS.
+     */
+    expect(() =>
+      validateEnv({ ...valid, WEB_APP_URL: 'http://localhost:3000,https://x.vercel.app' }),
+    ).toThrow(/single URL.*CORS_ORIGINS/s);
+  });
+
+  it('rejects an origin with no scheme, which would never match a browser', () => {
+    // A browser sends Origin: https://host. "host" alone silently matches
+    // nothing, and surfaces as an unexplained CORS failure much later.
+    expect(() => validateEnv({ ...valid, CORS_ORIGINS: 'rakuxon-path.vercel.app' })).toThrow(
+      /scheme/i,
+    );
+  });
+
+  it('rejects a scheme-less app URL with the same explanation', () => {
+    expect(() => validateEnv({ ...valid, WEB_APP_URL: 'rakuxon-path.vercel.app' })).toThrow(
+      /WEB_APP_URL/,
+    );
+  });
+
+  it('accepts a proper list of origins', () => {
+    expect(() =>
+      validateEnv({
+        ...valid,
+        CORS_ORIGINS: 'https://a.vercel.app, https://b.vercel.app',
+      }),
+    ).not.toThrow();
+  });
+
   it('leaves CORS_ORIGINS optional', () => {
     expect(() => validateEnv(valid)).not.toThrow();
   });
