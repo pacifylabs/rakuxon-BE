@@ -11,10 +11,12 @@ rakuxon-BE/
 │   ├── app.module.ts
 │   ├── common/
 │   │   ├── tenancy/
-│   │   │   ├── tenant-context.provider.ts
+│   │   │   ├── access-scope.ts          # ★ THE SWITCH (09 §4.1)
+│   │   │   ├── tenant-context.ts        # runInData/Tenant/Operator/IdentityContext
 │   │   │   ├── tenant-resolution.middleware.ts
-│   │   │   ├── run-in-tenant-context.ts
-│   │   │   └── orm-tenant.guard.ts
+│   │   │   ├── rls-enforcement.ts       # boot assertion: role cannot bypass RLS
+│   │   │   └── tenancy.module.ts
+│   │   ├── entitlements/                # AgencyEntitlement + @RequiresEntitlement
 │   │   ├── auth/                 # JWT strategy, guards, SSO adapter
 │   │   ├── rbac/                 # roles + @Roles() guard
 │   │   ├── storage/
@@ -33,10 +35,13 @@ rakuxon-BE/
 │   │   ├── students/
 │   │   ├── documents/
 │   │   ├── catalogue/            # institutions, programs (GLOBAL), search, shortlists
+│   │   │   ├── search/           # ranked typeahead + full search
+│   │   │   └── sourcing/         # CatalogueSource adapters + import pipeline (10)
 │   │   ├── applications/         # lifecycle, messaging, offers
 │   │   ├── institutions/         # institution portal domain
 │   │   ├── billing/              # plans, subscriptions, metering, ledger
-│   │   └── admin/
+│   │   ├── contact/             # public enquiry intake (marketing site)
+│   │   └── admin/               # vetting, entitlements, catalogue review queue
 │   ├── database/
 │   │   ├── data-source.ts
 │   │   ├── migrations/
@@ -67,17 +72,23 @@ modules/<name>/
 ## Request pipeline
 
 ```
-auth guard → tenant-resolution middleware → tenant-context provider
-→ controller → service → runInTenantContext(tenantId, manager => repo work)
-→ Postgres RLS filters rows → orm-tenant.guard catches missing context
+auth guard → @Roles → @RequiresEntitlement → tenant-resolution middleware
+→ controller → service → runInDataContext(actor, manager => repo work)
+→ access-scope.ts decides which session variables to set
+→ Postgres RLS filters rows (reads may widen; writes never do)
+→ audit-log entry for operator access and cross-agency reads
 → async side-effects (documents, AI, notifications, metering) via BullMQ
 ```
 
-## Global vs tenant-scoped
+## Data scoping
 
-- **Global (no RLS):** `institutions`, `programs`.
-- **Tenant-scoped (RLS forced):** everything else listed in `CONTEXT.md`.
+- **Global (no RLS):** `institutions`, `programs` — the shared catalogue. Intended and safe.
+- **Shared-scope (RLS forced, reads widen under the switch):** `students`, `documents`, `applications`.
+- **Tenant-scoped (RLS forced, never widens):** `users`, `onboarding_links`, `agency_entitlements`, billing, ledger, usage, audit.
+- **Credential (RLS forced, identity path only):** `refresh_tokens`, `password_reset_tokens`, `sso_identities`.
+
+The switch, the table lists and the read/write asymmetry are defined in `09-tenant-isolation.md` §4. **Do not scatter scope decisions into services** — they call `runInDataContext` and the helper decides.
 
 ## Interfaces (providers swapped by config)
 
-`StorageProvider` (Cloudinary now) · `PaymentProvider` (stub now, Stripe later) · AI provider (routed) · notification channel (email + ws). No feature code imports a vendor SDK directly.
+`StorageProvider` (Cloudinary now) · `PaymentProvider` (stub now, Stripe later) · AI provider (routed) · notification channel (email + ws) · **`CatalogueSource`** (one adapter per licensed/open dataset — the only code that fetches an external catalogue). No feature code imports a vendor SDK directly.

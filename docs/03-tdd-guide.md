@@ -29,13 +29,22 @@ Shape of the keystone test:
 
 ```
 setup: create Tenant A and Tenant B, each with a student + a document
-for each tenant-scoped repository/endpoint:
-  acting as A:
-    - reading B's row returns nothing (RLS) or 404/403 (API)
-    - writing to B's row is rejected
-    - a query with no tenant context throws (ORM guard)
-assert: zero cross-tenant reads/writes succeed
+run the whole suite TWICE — once per STUDENT_DATA_SCOPE value
+
+for each tenant-scoped repository/endpoint, acting as A:
+  scope=agency    reading B's row returns nothing (RLS) or 404/403
+  scope=platform  reading B's SHARED-scope row succeeds (students,
+                  documents, applications) and nothing else does
+  both scopes:    writing to B's row is rejected
+                  DELETING B's row is rejected
+                  a query with no context returns nothing, and the
+                  helper throws rather than running unscoped
+assert: no cross-tenant WRITE ever succeeds, in either scope
 ```
+
+**Both modes are required.** The `agency` mode is not legacy — it is what keeps
+the access-scope switch (`09-tenant-isolation.md` §4) genuinely reversible
+instead of a code path that rots while the other one is live.
 
 Every new tenant-scoped module **adds its endpoints to this suite** as part of its definition of done. CI runs it on every push; **red = no merge**.
 
@@ -43,6 +52,7 @@ Every new tenant-scoped module **adds its endpoints to this suite** as part of i
 
 - **Mock:** Cloudinary SDK (assert signing params + folder path), BullMQ (assert jobs enqueued), AI provider (assert routing decisions + fallback), email transport, time where needed.
 - **Keep real:** Postgres + RLS, TypeORM repositories, the Nest DI graph in e2e.
+- **Never live:** external catalogue sources. Adapters are tested against recorded fixtures — a CI run must not depend on a third-party dataset being up, and must never hit a competitor's site at all (`10-catalogue-data.md` §1).
 
 ## Fixtures & helpers
 

@@ -51,7 +51,76 @@
 
 **Gate:** isolation suite green and required; manual cross-tenant read fails at the DB.
 
+> **Status: green.** RLS with `FORCE ROW LEVEL SECURITY`, a two-role database
+> split (the API connects as a non-superuser `rakuxon_app`; migrations use the
+> owner), `runInTenantContext` / `runInIdentityContext`, a boot assertion that
+> refuses to start on a role that can bypass RLS, and a 27-test gate proven by
+> mutation. **Deviation:** the planned TypeORM-level "ORM guard" was not built —
+> TypeORM has no clean query-level hook. Enforcement is the database
+> (default-deny), the helper throwing on a missing tenant, and a structural test
+> that fails if the identity escape hatch is called outside its three allowed
+> files.
+
 > From here, every new module adds its endpoints to the isolation suite as part of its definition of done.
+
+---
+
+## Stage 2b — Operator control & the access-scope switch `branch: stage/2b-operator-scope`
+
+> **Plan revision.** The tenancy model became **operator-controlled scoping**:
+> Rakuxon is super-admin, and student data is shared platform-wide behind one
+> switch. Read the risk callout in `09-tenant-isolation.md` §1 first — it is a
+> GDPR, children's-data and competitive exposure, accepted deliberately.
+
+**Build:** `AgencyEntitlement` + admin controls, `runInOperatorContext`, `runInDataContext`, the `access-scope.ts` switch, per-command RLS policies, dual-mode gate.
+
+**TDD steps**
+1. Test: `access-scope.ts` resolves `platform` from config, and `agency` when the tenant's entitlement says `dataAccess: 'own'` — an entitlement can narrow, never widen → implement the switch.
+2. Test (the keystone, run twice): under `agency` scope A cannot read B's students; under `platform` scope A **can** read B's students but still cannot read B's `users`, `onboarding_links`, entitlements or ledger → implement per-command policies.
+3. Test: under `platform` scope, A cannot `UPDATE` or **`DELETE`** B's student. `WITH CHECK` does not apply to `DELETE`, so a single wide policy would leave deletion open — the split into `FOR SELECT` and `FOR ALL` policies is what closes it → implement.
+4. Test: `runInOperatorContext` is reachable only by `platform_admin`, sees every tenant, and writes an `audit_log` row → implement.
+5. Test: a cross-agency read that actually returns another tenant's rows is audited → implement.
+6. Test: `@RequiresEntitlement('ai_document_checks')` returns 403 when the flag is absent; an absent flag is off, not on → implement the guard.
+7. Test: a suspended tenant cannot sign in, independently of entitlements → assert existing behaviour still holds.
+8. Wire the isolation gate to run **twice**, once per scope mode, both required.
+
+**Gate:** the isolation suite green in **both** scope modes; entitlement guard green; operator access audited. A green `agency` mode is what makes the switch reversible rather than theoretical.
+
+---
+
+## Stage 2c — Catalogue foundation & search `branch: stage/2c-catalogue`
+
+**Build:** `Institution` / `Program` entities per `10-catalogue-data.md` §2, ranked typeahead + search endpoints, public detail endpoints, `CatalogueSource` interface + first adapter, import pipeline.
+
+> **Do not scrape Edvoy or any competitor.** Edvoy is a structural reference for
+> page fields only. Sources are licensed/official/open, and every source's
+> licence is verified and recorded in `10-catalogue-data.md` §5 **before** its
+> adapter is written.
+
+**TDD steps**
+1. Test: `GET /v1/catalogue/suggest?q=comp` returns ranked matches across universities and courses, exact-prefix before fuzzy, ≤ the requested limit → implement `pg_trgm` + `tsvector` search.
+2. Test: suggest is public, rate-limited, and returns nothing tenant-scoped → implement as `@Public()`.
+3. Test: an empty or 1-character query returns an empty list rather than the whole catalogue → implement the floor.
+4. Test: `GET /v1/catalogue/courses/:slug` returns overview, entry requirements, fees, intakes and location; an unknown slug is 404 → implement.
+5. Test: a `CatalogueSource` adapter normalises a fixture payload into the §2 shape and records provenance (no live network in CI) → implement the interface + first adapter.
+6. Test: re-importing the same fixture updates rather than duplicates (identifier match before merge) → implement matching.
+7. Test: an unmapped discipline lands in the review queue instead of being invented → implement the vocabulary mapping.
+8. Test: a sparse source cannot blank a field a richer source filled → implement field-level precedence merge.
+
+**Gate:** typeahead returns ranked results under 150ms P95 against a seeded catalogue; import is idempotent; every seeded row carries provenance.
+
+---
+
+## Stage 2d — Public intake `branch: stage/2d-contact`
+
+**Build:** `POST /v1/contact` for the marketing site.
+
+**TDD steps**
+1. Test: a valid enquiry is stored and a notification emitted → implement.
+2. Test: the endpoint is public but rate-limited per IP → implement the throttle.
+3. Test: a submission with a filled honeypot field is accepted with 202 and silently dropped → implement (telling a bot it failed teaches it to retry).
+
+**Gate:** the marketing contact form reaches the API end to end.
 
 ---
 
@@ -74,16 +143,16 @@
 
 ## Stage 4 — Workflow spine `branch: stage/4-spine`
 
-**Build:** pipeline stages, bulk import, assign/reassign, catalogue + search + shortlist, applications + messaging.
+**Build:** pipeline stages, bulk import, assign/reassign, shortlist, applications + messaging. *(Catalogue entities and search moved earlier, to stage 2c — the marketing site needs them before the workflow does.)*
 
 **TDD steps**
 1. Test: stage transitions are audited; invalid transition rejected → implement pipeline.
 2. Test: CSV import reports row errors without failing the batch → implement bulk import.
 3. Test: reassign moves access rights with the student → implement.
-4. Test: catalogue search filters (country/level/subject/fees/intake) return expected set; institutions/programs are global (visible across tenants) → implement search.
+4. Test: authenticated catalogue filters (country/level/subject/fees/intake) return the expected set on top of stage 2c's search; shortlisting a program is tenant-scoped even though the catalogue is global → implement.
 5. Test: create application (student→program) with required docs; status lifecycle + audit trail → implement.
 6. Test: post message on application persists + scoped to tenant → implement (realtime added Stage 8).
-7. Extend isolation suite for applications/messages/shortlists (and confirm catalogue is intentionally global).
+7. Extend the isolation suite for applications/messages/shortlists, **in both scope modes** — applications are a shared-scope table, so `platform` mode must show reads widening while writes and deletes still fail across the boundary.
 
 **Gate:** counselor takes a student lead → submitted application; all green.
 
