@@ -30,6 +30,17 @@ export const envSchema = z.object({
   WEB_APP_URL: z.string().url('WEB_APP_URL must be a valid URL'),
 
   /**
+   * Where each audience signs in.
+   *
+   * A password reset link has to land on the surface that person actually
+   * uses. Sending an agency admin to the marketing site, which has no reset
+   * screen, is a dead end. Each falls back to WEB_APP_URL.
+   */
+  PARTNER_APP_URL: z.string().url().optional(),
+  INSTITUTION_APP_URL: z.string().url().optional(),
+  ADMIN_APP_URL: z.string().url().optional(),
+
+  /**
    * Origins allowed to call the API from a browser.
    *
    * A list, not a single value: the frontend is five separate apps on five
@@ -70,6 +81,27 @@ export function validateEnv(source: Record<string, unknown>): Env {
   }
 
   return Object.freeze(result.data);
+}
+
+/**
+ * The surface a given role signs in on.
+ *
+ * Falls back to WEB_APP_URL so a deployment that has not configured the app
+ * URLs still produces a link, rather than none.
+ */
+export function appUrlForRole(env: Env, role: string): string {
+  switch (role) {
+    case 'agency_admin':
+    case 'counselor':
+      return env.PARTNER_APP_URL ?? env.WEB_APP_URL;
+    case 'institution_user':
+      return env.INSTITUTION_APP_URL ?? env.WEB_APP_URL;
+    case 'platform_admin':
+      return env.ADMIN_APP_URL ?? env.WEB_APP_URL;
+    default:
+      /* Students arrive through a tokenised link on the public site. */
+      return env.WEB_APP_URL;
+  }
 }
 
 /** The allowed browser origins, with WEB_APP_URL always included. */

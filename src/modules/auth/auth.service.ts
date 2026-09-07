@@ -15,6 +15,7 @@ import { PasswordService } from './password.service';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { TokenService } from './token.service';
 import { ENV } from '../../common/config/config.module';
+import { appUrlForRole } from '../../common/config/env.schema';
 import type { Env } from '../../common/config/env.schema';
 import { NOTIFICATION_PORT } from '../../common/notifications/notification.port';
 import type { NotificationPort } from '../../common/notifications/notification.port';
@@ -178,7 +179,9 @@ export class AuthService {
 
     await this.notifications.sendPasswordReset({
       to: user.email,
-      resetUrl: `${this.env.WEB_APP_URL}/reset-password/${token}`,
+      /* The surface this person actually signs in on — the marketing site
+         has no reset screen. */
+      resetUrl: `${appUrlForRole(this.env, user.role)}/reset-password/${token}`,
       expiresAt,
     });
   }

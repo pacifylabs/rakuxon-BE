@@ -1,4 +1,4 @@
-import { EnvValidationError, corsOrigins, validateEnv } from './env.schema';
+import { EnvValidationError, appUrlForRole, corsOrigins, validateEnv } from './env.schema';
 
 const valid = {
   NODE_ENV: 'test',
@@ -98,5 +98,34 @@ describe('corsOrigins', () => {
   it('does not repeat the canonical address if it is listed again', () => {
     const env = validateEnv({ ...valid, CORS_ORIGINS: 'http://localhost:3000' });
     expect(corsOrigins(env)).toEqual(['http://localhost:3000']);
+  });
+});
+
+describe('appUrlForRole', () => {
+  const configured = validateEnv({
+    ...valid,
+    PARTNER_APP_URL: 'https://app.test',
+    INSTITUTION_APP_URL: 'https://schools.test',
+    ADMIN_APP_URL: 'https://admin.test',
+  });
+
+  it.each([
+    ['agency_admin', 'https://app.test'],
+    ['counselor', 'https://app.test'],
+    ['institution_user', 'https://schools.test'],
+    ['platform_admin', 'https://admin.test'],
+  ])('sends %s to their own surface', (role, expected) => {
+    expect(appUrlForRole(configured, role)).toBe(expected);
+  });
+
+  it('sends a student to the public site, where their link lives', () => {
+    expect(appUrlForRole(configured, 'student')).toBe('http://localhost:3000');
+  });
+
+  it('falls back to the canonical address when an app URL is unset', () => {
+    // Better a link to the wrong surface than no link at all.
+    const bare = validateEnv(valid);
+    expect(appUrlForRole(bare, 'agency_admin')).toBe('http://localhost:3000');
+    expect(appUrlForRole(bare, 'platform_admin')).toBe('http://localhost:3000');
   });
 });
