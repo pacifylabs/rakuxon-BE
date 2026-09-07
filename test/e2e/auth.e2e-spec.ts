@@ -21,7 +21,7 @@ describe('auth', () => {
   };
 
   beforeAll(async () => {
-    app = await createTestApp();
+    ({ app } = await createTestApp());
   });
 
   afterAll(async () => {

@@ -1,4 +1,13 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Inject,
+  Param,
+  Post,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiConflictResponse,
@@ -11,7 +20,17 @@ import {
 } from '@nestjs/swagger';
 
 import { AuthService } from './auth.service';
-import { AuthTokensDto, LoginDto, RefreshDto, RegisterAgencyDto } from './dto/auth.dto';
+import {
+  AuthTokensDto,
+  ConfirmPasswordResetDto,
+  LoginDto,
+  RefreshDto,
+  RegisterAgencyDto,
+  RequestPasswordResetDto,
+  SsoCallbackDto,
+} from './dto/auth.dto';
+import { SSO_PROVIDERS } from './sso/sso.port';
+import type { SsoProvider } from './sso/sso.port';
 import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { Public } from '../../common/auth/public.decorator';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-request';
@@ -19,7 +38,10 @@ import type { AuthenticatedUser } from '../../common/auth/authenticated-request'
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    @Inject(SSO_PROVIDERS) private readonly ssoProviders: Map<string, SsoProvider>,
+  ) {}
 
   @Public()
   @Post('register')
@@ -75,6 +97,60 @@ export class AuthController {
   @ApiNoContentResponse()
   async logout(@Body() dto: RefreshDto): Promise<void> {
     await this.auth.logout(dto.refreshToken);
+  }
+
+  @Public()
+  @Post('password-reset/request')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Request a password reset link',
+    description:
+      'Always answers 204, whether or not the address has an account. Reporting which is ' +
+      'which would make this an account-enumeration endpoint.',
+  })
+  @ApiNoContentResponse()
+  async requestPasswordReset(@Body() dto: RequestPasswordResetDto): Promise<void> {
+    await this.auth.requestPasswordReset(dto.email);
+  }
+
+  @Public()
+  @Post('password-reset/confirm')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Set a new password from a reset link',
+    description:
+      'Single-use, and every existing session is revoked. If the reset was triggered by a ' +
+      'compromise, leaving the attacker signed in would defeat the point.',
+  })
+  @ApiNoContentResponse()
+  @ApiUnauthorizedResponse({ description: 'The link is unknown, expired or already used.' })
+  async confirmPasswordReset(@Body() dto: ConfirmPasswordResetDto): Promise<void> {
+    await this.auth.confirmPasswordReset(dto.token, dto.password);
+  }
+
+  @Public()
+  @Post('sso/:provider/callback')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Complete a single sign-on redirect',
+    description:
+      'Exchanges the authorization code server-side, so no client secret reaches a browser. ' +
+      'An address the provider has not verified is refused, and an address that already has ' +
+      'an account is linked rather than duplicated. SSO does not create tenants.',
+  })
+  @ApiOkResponse({ type: AuthTokensDto })
+  @ApiUnauthorizedResponse({ description: 'Provider refused, address unverified, or no account.' })
+  async ssoCallback(
+    @Param('provider') provider: string,
+    @Body() dto: SsoCallbackDto,
+  ): Promise<AuthTokensDto> {
+    const adapter = this.ssoProviders.get(provider);
+    if (!adapter) {
+      throw new BadRequestException(`Sign-in through "${provider}" is not configured.`);
+    }
+
+    const profile = await adapter.exchangeCode(dto.code, dto.redirectUri);
+    return this.auth.signInWithSso(provider, profile);
   }
 
   @Post('me')

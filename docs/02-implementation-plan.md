@@ -35,7 +35,7 @@
 
 **Gate:** auth + RBAC + tenant resolution all green; SSO happy-path passes.
 
-> **Status: partial.** Register / login / refresh-with-rotation / logout / me, argon2id hashing, refresh-token families with replay detection, `@Roles` guard, subdomain tenant resolution and onboarding-link issue/consume/revoke are green (43 unit, 39 e2e). **Not yet done:** password reset, the SSO adapter, and per-user data scoping — scoping lands with the RLS work in stage 2, where it can be enforced at the database rather than only in a service.
+> **Status: green, with one deferral.** Register / login / refresh-with-rotation / logout / me, argon2id hashing, refresh-token families with replay detection, password reset, the SSO adapter (Google), `@Roles` guard, subdomain tenant resolution and onboarding-link issue/consume/revoke (51 unit, 55 e2e). **Deferred:** per-user data scoping moves to stage 2, where RLS enforces it at the database rather than a service remembering to. Email is a logging adapter behind `NotificationPort` until stage 8.
 
 ---
 

@@ -95,3 +95,34 @@ export class AuthTokensDto {
   @ApiProperty({ type: AuthUserDto })
   user!: AuthUserDto;
 }
+
+export class RequestPasswordResetDto {
+  @ApiProperty({ example: 'ada@northwind.example' })
+  @IsEmail()
+  email!: string;
+}
+
+export class ConfirmPasswordResetDto {
+  @ApiProperty({ description: 'The token from the reset link.' })
+  @IsString()
+  @IsNotEmpty()
+  token!: string;
+
+  @ApiProperty({ example: 'a-brand-new-passphrase', minLength: PASSWORD_MIN })
+  @IsString()
+  @MinLength(PASSWORD_MIN)
+  @MaxLength(256)
+  password!: string;
+}
+
+export class SsoCallbackDto {
+  @ApiProperty({ description: 'Authorization code from the provider redirect.' })
+  @IsString()
+  @IsNotEmpty()
+  code!: string;
+
+  @ApiProperty({ description: 'The redirect URI the code was issued against.' })
+  @IsString()
+  @IsNotEmpty()
+  redirectUri!: string;
+}

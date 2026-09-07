@@ -58,7 +58,7 @@ describe('onboarding links', () => {
   }
 
   beforeAll(async () => {
-    app = await createTestApp();
+    ({ app } = await createTestApp());
     const session = await registerAgency();
     adminToken = session.accessToken;
     tenantId = session.user.tenantId;

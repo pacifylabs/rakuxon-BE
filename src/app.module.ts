@@ -5,6 +5,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtAuthGuard } from './common/auth/jwt-auth.guard';
 import { ConfigModule } from './common/config/config.module';
 import { HealthModule } from './common/health/health.module';
+import { NotificationsModule } from './common/notifications/notifications.module';
 import { RolesGuard } from './common/rbac/roles.guard';
 import { TenantResolutionMiddleware } from './common/tenancy/tenant-resolution.middleware';
 import { buildDataSourceOptions } from './database/data-source';
@@ -15,6 +16,7 @@ import { OnboardingLinksModule } from './modules/onboarding-links/onboarding-lin
   imports: [
     ConfigModule,
     TypeOrmModule.forRootAsync({ useFactory: () => buildDataSourceOptions() }),
+    NotificationsModule,
     HealthModule,
     AuthModule,
     OnboardingLinksModule,

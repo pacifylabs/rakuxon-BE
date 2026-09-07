@@ -1,17 +1,25 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 import {
   ConflictException,
+  Inject,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, IsNull, Repository } from 'typeorm';
 
+import { PasswordResetToken } from './entities/password-reset-token.entity';
+import { SsoIdentity } from './entities/sso-identity.entity';
 import { PasswordService } from './password.service';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { TokenService } from './token.service';
+import { ENV } from '../../common/config/config.module';
+import type { Env } from '../../common/config/env.schema';
+import { NOTIFICATION_PORT } from '../../common/notifications/notification.port';
+import type { NotificationPort } from '../../common/notifications/notification.port';
 import { Role, TenantStatus, UserStatus } from '../../contract/enums';
+import type { SsoProfile } from './sso/sso.port';
 import { Tenant } from '../tenants/entities/tenant.entity';
 import { User } from '../users/entities/user.entity';
 import type { AuthTokensDto } from './dto/auth.dto';
@@ -22,6 +30,11 @@ export class AuthService {
     @InjectRepository(User) private readonly users: Repository<User>,
     @InjectRepository(Tenant) private readonly tenants: Repository<Tenant>,
     @InjectRepository(RefreshToken) private readonly refreshTokens: Repository<RefreshToken>,
+    @InjectRepository(PasswordResetToken)
+    private readonly resetTokens: Repository<PasswordResetToken>,
+    @InjectRepository(SsoIdentity) private readonly ssoIdentities: Repository<SsoIdentity>,
+    @Inject(NOTIFICATION_PORT) private readonly notifications: NotificationPort,
+    @Inject(ENV) private readonly env: Env,
     private readonly passwords: PasswordService,
     private readonly tokens: TokenService,
     private readonly dataSource: DataSource,
@@ -139,6 +152,118 @@ export class AuthService {
       { tokenHash: this.tokens.hashRefreshToken(presentedToken) },
       { revokedAt: new Date() },
     );
+  }
+
+  /* ---------------------------------------------------------- password reset */
+
+  /**
+   * Starts a reset.
+   *
+   * Returns nothing either way. Telling the caller whether the address exists
+   * would turn this into an account-enumeration endpoint, which is the usual
+   * reason reset flows leak.
+   */
+  async requestPasswordReset(email: string): Promise<void> {
+    const user = await this.users.findOne({ where: { email } });
+    if (!user || user.status !== UserStatus.Active) return;
+
+    const token = randomBytes(32).toString('base64url');
+    /* One hour: a reset link sits in an inbox, which is far more exposed than
+       an app's memory. */
+    const expiresAt = new Date(Date.now() + 3_600_000);
+
+    await this.resetTokens.save(
+      this.resetTokens.create({ userId: user.id, tokenHash: this.sha256(token), expiresAt }),
+    );
+
+    await this.notifications.sendPasswordReset({
+      to: user.email,
+      resetUrl: `${this.env.WEB_APP_URL}/reset-password/${token}`,
+      expiresAt,
+    });
+  }
+
+  /**
+   * Completes a reset.
+   *
+   * Every existing session dies with the change. If the reset was triggered
+   * because an account was compromised, leaving the attacker's refresh token
+   * alive would defeat the whole exercise.
+   */
+  async confirmPasswordReset(token: string, newPassword: string): Promise<void> {
+    const grant = await this.resetTokens.findOne({ where: { tokenHash: this.sha256(token) } });
+
+    const unusable = !grant || grant.consumedAt || grant.expiresAt.getTime() <= Date.now();
+    if (unusable) {
+      throw new UnauthorizedException('That reset link is not valid.');
+    }
+
+    const passwordHash = await this.passwords.hash(newPassword);
+
+    await this.dataSource.transaction(async (manager) => {
+      await manager.update(User, grant.userId, { passwordHash });
+      await manager.update(PasswordResetToken, grant.id, { consumedAt: new Date() });
+      await manager.update(
+        RefreshToken,
+        { userId: grant.userId, revokedAt: IsNull() },
+        { revokedAt: new Date() },
+      );
+    });
+  }
+
+  /* ------------------------------------------------------------------- SSO */
+
+  /**
+   * Signs in through an identity provider.
+   *
+   * An unverified address is refused: accepting one would let anyone who can
+   * claim an address at a provider take over the matching platform account.
+   * Where the address already belongs to a user, the provider identity is
+   * linked rather than a second account created.
+   */
+  async signInWithSso(provider: string, profile: SsoProfile): Promise<AuthTokensDto> {
+    if (!profile.emailVerified) {
+      throw new UnauthorizedException(
+        'That provider has not verified the email address on this account.',
+      );
+    }
+
+    const existingIdentity = await this.ssoIdentities.findOne({
+      where: { provider, providerAccountId: profile.providerAccountId },
+    });
+
+    if (existingIdentity) {
+      const user = await this.users.findOne({ where: { id: existingIdentity.userId } });
+      if (!user || user.status !== UserStatus.Active) {
+        throw new UnauthorizedException('This account is not active.');
+      }
+      return this.issueTokens(user);
+    }
+
+    const user = await this.users.findOne({ where: { email: profile.email } });
+    if (!user) {
+      /* No self-service tenant creation through SSO: an agency is created
+         deliberately, and a student arrives through an invitation link. */
+      throw new UnauthorizedException('There is no account for that address yet.');
+    }
+
+    if (user.status !== UserStatus.Active) {
+      throw new UnauthorizedException('This account is not active.');
+    }
+
+    await this.ssoIdentities.save(
+      this.ssoIdentities.create({
+        userId: user.id,
+        provider,
+        providerAccountId: profile.providerAccountId,
+      }),
+    );
+
+    return this.issueTokens(user);
+  }
+
+  private sha256(value: string): string {
+    return createHash('sha256').update(value).digest('hex');
   }
 
   private async revokeFamily(familyId: string): Promise<void> {
