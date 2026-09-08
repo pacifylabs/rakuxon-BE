@@ -24,7 +24,9 @@
     "migration:run": "typeorm-ts-node-commonjs migration:run -d src/database/data-source.ts",
     "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/database/data-source.ts",
     "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/database/data-source.ts",
-    "db:provision": "ts-node -T scripts/provision-app-role.ts"
+    "db:provision": "ts-node -T scripts/provision-app-role.ts",
+    "migration:run:prod": "node -r reflect-metadata ./node_modules/typeorm/cli.js migration:run -d dist/database/data-source.js",
+    "start:migrate": "pnpm migration:run:prod && pnpm start:prod"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

@@ -45,7 +45,10 @@ async function bootstrap(): Promise<void> {
 
   setupSwagger(app);
 
-  await app.listen(env.PORT);
+  /* 0.0.0.0 explicitly: a host that binds only loopback is invisible to a
+     platform health check, which reports as "no open ports detected" and looks
+     like a crash rather than a binding problem. */
+  await app.listen(env.PORT, '0.0.0.0');
 }
 
 void bootstrap();
