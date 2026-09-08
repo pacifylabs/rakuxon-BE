@@ -46,17 +46,58 @@ async function main(): Promise<void> {
       await client.query(`ALTER ROLE "${role}" PASSWORD ${literal}`);
     }
 
-    /* Stated every run, not only at creation: a role that picked up BYPASSRLS
-       somewhere along the way would disable the entire isolation model. */
-    await client.query(
-      `ALTER ROLE "${role}" NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION`,
+    /*
+     * Stated every run, not only at creation: a role that picked up BYPASSRLS
+     * along the way would disable the entire isolation model.
+     *
+     * Altering these attributes needs a true superuser, which managed Postgres
+     * does not hand out — on Neon the owner holds `neon_superuser`, which is
+     * not the same thing. So the statement is attempted and a privilege
+     * failure is tolerated: a freshly created role has none of these
+     * attributes anyway. What is NOT tolerated is the role actually holding
+     * them, which is verified below regardless of whether the ALTER ran.
+     */
+    try {
+      await client.query(
+        `ALTER ROLE "${role}" NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION`,
+      );
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      /* 42501 insufficient_privilege, 0LP01 invalid_grant_operation. */
+      if (code !== '42501' && code !== '0LP01') throw error;
+      process.stdout.write(
+        `  note: cannot ALTER role attributes here (${code}); verifying them instead.\n`,
+      );
+    }
+
+    const { rows: checked } = await client.query<{ rolsuper: boolean; rolbypassrls: boolean }>(
+      'SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = $1',
+      [role],
     );
+    const attrs = checked[0];
+
+    if (!attrs) throw new Error(`Role "${role}" vanished between creation and verification.`);
+
+    if (attrs.rolsuper || attrs.rolbypassrls) {
+      const held = [attrs.rolsuper && 'SUPERUSER', attrs.rolbypassrls && 'BYPASSRLS']
+        .filter(Boolean)
+        .join(', ');
+      throw new Error(
+        `Role "${role}" holds ${held}, so row-level security would not apply to it and every ` +
+          'tenant policy would be inert. Postgres does not inherit these attributes through role ' +
+          'membership, so they were set on the role directly — remove them, or create the ' +
+          'application role with plain SQL rather than through a provider console that grants a ' +
+          'privileged role by default.',
+      );
+    }
 
     const database = (await client.query<{ current_database: string }>('SELECT current_database()'))
       .rows[0]?.current_database;
     await client.query(`GRANT CONNECT ON DATABASE "${database}" TO "${role}"`);
 
-    process.stdout.write(`Provisioned "${role}" on "${database}" (NOSUPERUSER, NOBYPASSRLS).\n`);
+    process.stdout.write(
+      `Provisioned "${role}" on "${database}" — verified NOT SUPERUSER, NOT BYPASSRLS.\n`,
+    );
   } finally {
     await client.end();
   }
