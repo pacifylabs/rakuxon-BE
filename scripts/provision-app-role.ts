@@ -98,6 +98,24 @@ async function main(): Promise<void> {
     process.stdout.write(
       `Provisioned "${role}" on "${database}" — verified NOT SUPERUSER, NOT BYPASSRLS.\n`,
     );
+
+    /*
+     * Print the connection string rather than leaving it to be assembled by
+     * hand. A managed URL carries query parameters that matter — Neon's
+     * `sslmode` and `channel_binding` among them — and rebuilding it by
+     * swapping two path components in a text field is the step most likely to
+     * be skipped or fumbled, which leaves DATABASE_URL on the owner and every
+     * tenant policy inert.
+     */
+    const appUrl = new URL(adminUrl);
+    appUrl.username = encodeURIComponent(role);
+    appUrl.password = encodeURIComponent(password);
+
+    process.stdout.write(
+      `\nSet DATABASE_URL to this, and keep the owner string as DATABASE_ADMIN_URL:\n\n` +
+        `  ${appUrl.toString()}\n\n` +
+        `It contains the password you just set, so treat it accordingly.\n`,
+    );
   } finally {
     await client.end();
   }
