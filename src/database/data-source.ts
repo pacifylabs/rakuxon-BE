@@ -8,9 +8,9 @@ import { validateEnv } from '../common/config/env.schema';
 /**
  * TypeORM configuration.
  *
- * `synchronize` is off everywhere, including development: the schema carries
- * row-level security policies that TypeORM cannot express, so it has to be
- * migration-owned or the isolation guarantee silently disappears.
+ * `synchronize` is off everywhere, including development. A schema that a tool
+ * can rewrite on boot is a schema nobody has reviewed, and the difference
+ * between environments only shows up under load.
  */
 export function buildDataSourceOptions(
   env = validateEnv(process.env),
@@ -19,11 +19,10 @@ export function buildDataSourceOptions(
    * so the CLI connects as the owner. The application never does — see the
    * note on DATABASE_URL in env.schema.ts.
    */
-  options: { admin?: boolean } = {},
 ): DataSourceOptions {
   return {
     type: 'postgres',
-    url: options.admin ? (env.DATABASE_ADMIN_URL ?? env.DATABASE_URL) : env.DATABASE_URL,
+    url: env.DATABASE_URL,
     ssl: env.DATABASE_SSL ? { rejectUnauthorized: false } : false,
     synchronize: false,
     logging: env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
@@ -34,4 +33,4 @@ export function buildDataSourceOptions(
 }
 
 /** Used by the TypeORM CLI for migrations. */
-export default new DataSource(buildDataSourceOptions(undefined, { admin: true }));
+export default new DataSource(buildDataSourceOptions());

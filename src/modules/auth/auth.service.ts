@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 import { ConflictException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
-import { EntityManager, IsNull, Repository } from 'typeorm';
+import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
 
 import { PasswordResetToken } from './entities/password-reset-token.entity';
 import { SsoIdentity } from './entities/sso-identity.entity';
@@ -16,7 +16,6 @@ import type { NotificationPort } from '../../common/notifications/notification.p
 import { Role, TenantStatus, UserStatus } from '../../contract/enums';
 import type { SsoProfile } from './sso/sso.port';
 import { Tenant } from '../tenants/entities/tenant.entity';
-import { TenantContext } from '../../common/tenancy/tenant-context';
 import { User } from '../users/entities/user.entity';
 import type { AuthTokensDto } from './dto/auth.dto';
 
@@ -38,9 +37,10 @@ interface IdentityRepositories {
  * `runInIdentityContext`, the single narrow exemption row-level security
  * grants, and every repository below comes from that transaction's manager.
  *
- * There are deliberately no `@InjectRepository` fields here. One would look
- * ordinary, run outside the context, and return nothing at all — a silently
- * empty result rather than an error.
+ * Repositories are taken from the transaction rather than injected, so every
+ * query in a flow shares one connection and one transaction — sign-in, token
+ * rotation and password reset each touch several tables and must not
+ * half-apply.
  */
 @Injectable()
 export class AuthService {
@@ -49,7 +49,7 @@ export class AuthService {
     @Inject(ENV) private readonly env: Env,
     private readonly passwords: PasswordService,
     private readonly tokens: TokenService,
-    private readonly tenancy: TenantContext,
+    private readonly dataSource: DataSource,
   ) {}
 
   /**
@@ -71,7 +71,7 @@ export class AuthService {
        under load. */
     const passwordHash = await this.passwords.hash(input.password);
 
-    const user = await this.identity(async ({ tenants, users }) => {
+    const user = await this.inTransaction(async ({ tenants, users }) => {
       if (await tenants.exist({ where: { slug } })) {
         throw new ConflictException('That subdomain is already taken.');
       }
@@ -102,7 +102,7 @@ export class AuthService {
 
   async login(email: string, password: string): Promise<AuthTokensDto> {
     /* passwordHash is select:false, so ask for it explicitly. */
-    const user = await this.identity(({ users }) =>
+    const user = await this.inTransaction(({ users }) =>
       users
         .createQueryBuilder('user')
         .addSelect('user.passwordHash')
@@ -141,7 +141,7 @@ export class AuthService {
   async refresh(presentedToken: string): Promise<AuthTokensDto> {
     const tokenHash = this.tokens.hashRefreshToken(presentedToken);
 
-    const stored = await this.identity(({ refreshTokens }) =>
+    const stored = await this.inTransaction(({ refreshTokens }) =>
       refreshTokens.findOne({ where: { tokenHash } }),
     );
 
@@ -155,7 +155,7 @@ export class AuthService {
        * would roll the revocation back on the way out — the replay would be
        * reported and the stolen family would stay alive.
        */
-      await this.identity((repos) => this.revokeFamily(repos, stored.familyId));
+      await this.inTransaction((repos) => this.revokeFamily(repos, stored.familyId));
 
       throw new UnauthorizedException(
         'That refresh token has already been used. All sessions have been ended.',
@@ -166,7 +166,7 @@ export class AuthService {
       throw new UnauthorizedException('That refresh token has expired.');
     }
 
-    const user = await this.identity(({ users }) => users.findOne({ where: { id: stored.userId } }));
+    const user = await this.inTransaction(({ users }) => users.findOne({ where: { id: stored.userId } }));
 
     if (!user || user.status !== UserStatus.Active) {
       throw new UnauthorizedException('This account is not active.');
@@ -177,7 +177,7 @@ export class AuthService {
 
   /** Ends the presented session. Unknown tokens succeed: logout is idempotent. */
   async logout(presentedToken: string): Promise<void> {
-    await this.identity(({ refreshTokens }) =>
+    await this.inTransaction(({ refreshTokens }) =>
       refreshTokens.update(
         { tokenHash: this.tokens.hashRefreshToken(presentedToken) },
         { revokedAt: new Date() },
@@ -200,7 +200,7 @@ export class AuthService {
        an app's memory. */
     const expiresAt = new Date(Date.now() + 3_600_000);
 
-    const user = await this.identity(async ({ users, resetTokens }) => {
+    const user = await this.inTransaction(async ({ users, resetTokens }) => {
       const found = await users.findOne({ where: { email } });
       if (!found || found.status !== UserStatus.Active) return null;
 
@@ -232,7 +232,7 @@ export class AuthService {
   async confirmPasswordReset(token: string, newPassword: string): Promise<void> {
     const passwordHash = await this.passwords.hash(newPassword);
 
-    await this.identity(async ({ resetTokens, manager }) => {
+    await this.inTransaction(async ({ resetTokens, manager }) => {
       const grant = await resetTokens.findOne({ where: { tokenHash: this.sha256(token) } });
 
       const unusable = !grant || grant.consumedAt || grant.expiresAt.getTime() <= Date.now();
@@ -267,7 +267,7 @@ export class AuthService {
       );
     }
 
-    const user = await this.identity(async ({ users, ssoIdentities }) => {
+    const user = await this.inTransaction(async ({ users, ssoIdentities }) => {
       const existingIdentity = await ssoIdentities.findOne({
         where: { provider, providerAccountId: profile.providerAccountId },
       });
@@ -305,9 +305,17 @@ export class AuthService {
     return this.issueTokens(user);
   }
 
-  /** Opens an identity-context transaction and hands back repositories on it. */
-  private async identity<T>(work: (repos: IdentityRepositories) => Promise<T>): Promise<T> {
-    return this.tenancy.runInIdentityContext((manager) =>
+  /**
+   * Runs the work in one transaction, with the auth repositories bound to it.
+   *
+   * This was an "identity context" — a session variable that told row-level
+   * security to let sign-in read across tenants, since a person logging in has
+   * no tenant yet. The policies are gone, so it is now an ordinary
+   * transaction: sign-in, token rotation and password reset each touch several
+   * tables and must not half-apply.
+   */
+  private async inTransaction<T>(work: (repos: IdentityRepositories) => Promise<T>): Promise<T> {
+    return this.dataSource.transaction((manager: EntityManager) =>
       work({
         users: manager.getRepository(User),
         tenants: manager.getRepository(Tenant),
@@ -342,7 +350,7 @@ export class AuthService {
 
     const minted = this.tokens.mintRefreshToken();
 
-    await this.identity(async ({ refreshTokens }) => {
+    await this.inTransaction(async ({ refreshTokens }) => {
       const saved = await refreshTokens.save(
         refreshTokens.create({
           userId: user.id,

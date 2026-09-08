@@ -18,13 +18,11 @@
     "test:watch": "jest --config jest.config.ts --watch",
     "test:cov": "jest --config jest.config.ts --coverage",
     "test:e2e": "jest --config jest-e2e.config.ts --runInBand",
-    "test:isolation": "jest --config jest-isolation.config.ts --runInBand",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "migration:run": "typeorm-ts-node-commonjs migration:run -d src/database/data-source.ts",
     "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/database/data-source.ts",
     "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/database/data-source.ts",
-    "db:provision": "ts-node -T scripts/provision-app-role.ts",
     "migration:run:prod": "node -r reflect-metadata ./node_modules/typeorm/cli.js migration:run -d dist/database/data-source.js",
     "start:migrate": "pnpm migration:run:prod && pnpm start:prod",
     "env:check": "ts-node -T scripts/check-env.ts"

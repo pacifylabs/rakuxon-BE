@@ -14,7 +14,7 @@ let shared: DataSource | undefined;
 
 export async function adminDataSource(): Promise<DataSource> {
   if (!shared) {
-    const options = buildDataSourceOptions(undefined, { admin: true });
+    const options = buildDataSourceOptions();
     /* Checked before connecting, not before truncating: migrations run on this
        connection too, and a migration against production is as bad as a wipe. */
     assertLocalDatabase((options as { url?: string }).url ?? '');
@@ -53,7 +53,7 @@ function assertLocalDatabase(url: string): void {
   if (LOCAL_HOSTS.has(host)) return;
 
   throw new Error(
-    `Refusing to TRUNCATE: DATABASE_ADMIN_URL points at "${host || 'an unparseable host'}", ` +
+    `Refusing to TRUNCATE: DATABASE_URL points at "${host || 'an unparseable host'}", ` +
       'which is not a local database. The test suite empties tables between files, so running ' +
       'it against a hosted database would destroy real data. Point .env at docker-compose ' +
       '(localhost:5433) before running tests.',

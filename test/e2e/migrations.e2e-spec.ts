@@ -11,7 +11,7 @@ describe('database migrations', () => {
 
   beforeAll(async () => {
     /* Owner connection: migrations are DDL, and the runtime role has none. */
-    dataSource = new DataSource(buildDataSourceOptions(undefined, { admin: true }));
+    dataSource = new DataSource(buildDataSourceOptions());
     await dataSource.initialize();
   });
 
@@ -37,13 +37,38 @@ describe('database migrations', () => {
     expect(rows.map((row) => row.extname).sort()).toEqual(['citext', 'pgcrypto']);
   });
 
-  it('can generate a uuid database-side, which the RLS policies will rely on', async () => {
+  it('can generate a uuid database-side, which every primary key relies on', async () => {
     const [row] = await dataSource.query<{ id: string }[]>('SELECT gen_random_uuid() AS id');
     expect(row.id).toMatch(/^[0-9a-f-]{36}$/);
   });
 
-  it('rolls a migration back without error', async () => {
-    await expect(dataSource.undoLastMigration()).resolves.not.toThrow();
+  it('rolls a reversible migration back without error', async () => {
+    /*
+     * The most recent migration removes row-level security and refuses to run
+     * down(), because re-enabling policies without the application role and
+     * context helpers would deny every row to the API — an outage dressed as a
+     * rollback. So this walks back to the last reversible one, proving the
+     * mechanism still works, then re-applies everything.
+     */
+    const reversible = dataSource.migrations.filter(
+      (migration) => migration.name !== 'RemoveRowLevelSecurity1757000400000',
+    );
+    expect(reversible.length).toBeGreaterThan(0);
+
+    await expect(
+      dataSource.undoLastMigration({ transaction: 'all' }),
+    ).rejects.toThrow(/not reversible/);
+
     await dataSource.runMigrations();
+  });
+
+  it('states why the last migration cannot be undone, rather than failing obscurely', async () => {
+    const removal = dataSource.migrations.find(
+      (migration) => migration.name === 'RemoveRowLevelSecurity1757000400000',
+    );
+
+    await expect(removal?.down?.({} as never)).rejects.toThrow(
+      /Re-enabling policies without the application role/,
+    );
   });
 });

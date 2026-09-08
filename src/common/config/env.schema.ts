@@ -38,25 +38,7 @@ export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3001),
 
-  /**
-   * The runtime connection, and it must NOT be an owner or superuser account.
-   *
-   * Postgres exempts superusers and BYPASSRLS roles from row-level security
-   * with no warning, so pointing this at the migration credentials would leave
-   * every policy in place and enforcing nothing. `assertRlsEnforceable` checks
-   * it at boot rather than trusting the deployment to get it right.
-   */
   DATABASE_URL: z.string().url('DATABASE_URL must be a valid connection URL'),
-
-  /** Owner connection, used only by migrations and provisioning. */
-  DATABASE_ADMIN_URL: z.string().url().optional(),
-
-  /** The role `pnpm db:provision` creates and the migration grants to. */
-  DATABASE_APP_USER: z
-    .string()
-    .regex(/^[a-z_][a-z0-9_]*$/, 'DATABASE_APP_USER must be a plain lowercase identifier')
-    .default('rakuxon_app'),
-  DATABASE_APP_PASSWORD: z.string().optional(),
 
   DATABASE_SSL: z
     .enum(['true', 'false'])

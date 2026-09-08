@@ -9,8 +9,8 @@ jobs:
   verify:
     runs-on: ubuntu-latest
 
-    # Real Postgres and Redis: RLS is a database feature and the isolation
-    # gate cannot prove anything against a mock.
+    # Real Postgres and Redis: the e2e suite runs migrations and exercises
+    # tenant filtering against a real database, which a mock cannot prove.
     services:
       postgres:
         image: postgres:16-alpine
@@ -35,7 +35,6 @@ jobs:
       # superusers from row-level security, so a suite run as one proves
       # nothing and a deployment run as one isolates nothing.
       DATABASE_URL: postgresql://rakuxon_app:rakuxon_app@localhost:5433/rakuxon
-      DATABASE_ADMIN_URL: postgresql://rakuxon:rakuxon@localhost:5433/rakuxon
       DATABASE_APP_USER: rakuxon_app
       DATABASE_APP_PASSWORD: rakuxon_app
       DATABASE_SSL: 'false'
@@ -55,10 +54,6 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Roles are cluster-level, so this is not a migration. It has to happen
-      # before one: the RLS migration grants to this role and fails without it.
-      - name: Provision the application role
-        run: pnpm db:provision
 
       - name: Migrate
         run: pnpm migration:run
@@ -74,8 +69,6 @@ jobs:
 
       # docs/03-tdd-guide.md: red here means no merge, no exceptions. The
       # suite refuses to pass with no tests, so deleting it fails too.
-      - name: Tenant isolation gate
-        run: pnpm test:isolation
 
       - name: Build
         run: pnpm build

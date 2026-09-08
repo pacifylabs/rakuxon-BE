@@ -62,40 +62,7 @@ problem at once. A boot reports only the first thing it trips over, and each
 round trip costs a build. It connects to nothing, so it is safe to run against
 production values.
 
-### Managed Postgres: provisioning the application role
-
-Managed providers hand you an owner that can bypass RLS. Neon's `neondb_owner`
-holds `BYPASSRLS` directly, so pointing `DATABASE_URL` at it leaves every
-policy in place and enforcing nothing — the API refuses to boot rather than
-pretend otherwise.
-
-Postgres does **not** inherit role attributes through membership, so the fix is
-a role that simply never had them:
-
-```bash
-# 1. Create the application role. Owner connection, app credentials.
-DATABASE_ADMIN_URL='<owner connection string>' \
-DATABASE_APP_USER=rakuxon_app \
-DATABASE_APP_PASSWORD='<a new strong password>' \
-  pnpm db:provision
-
-# 2. Migrate as the owner. This also grants the four statements to the app role.
-DATABASE_ADMIN_URL='<owner connection string>' pnpm migration:run
-
-# 3. Point the service at the app role, and keep the owner for migrations only.
-```
-
-`db:provision` cannot run `ALTER ROLE ... NOBYPASSRLS` on a managed provider —
-that needs a true superuser — so it tolerates the failure and **verifies** the
-attributes instead, refusing if the role can bypass RLS. Create the role with
-this script rather than a provider console, which may attach a privileged role
-by default. To check any role yourself:
-
-```sql
-SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user;
-```
-
-- **`DATABASE_URL` must not be an owner or superuser account.** Postgres exempts
+- **`DATABASE_URL` is a single connection.** Tenant scoping is enforced in application code, not by the database, so there is no second role to provision. Postgres exempts
   superusers and `BYPASSRLS` roles from row-level security silently, so those
   credentials leave every policy in place and enforcing nothing. Provision the
   app role once with `pnpm db:provision`, give migrations `DATABASE_ADMIN_URL`,

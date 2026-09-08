@@ -54,26 +54,15 @@ function auditForProduction(): void {
   for (const name of ['JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET'] as const) {
     const value = raw[name] ?? '';
     if (SHIPPED_SECRETS.some((seed) => value.startsWith(seed))) {
-      problems.push(
+      /* Fine locally — that is what .env.example is for. Fatal anywhere real,
+         because the value is published in the repository. */
+      const message =
         `${name} is a value from .env.example. It is public, so anyone can forge tokens. ` +
-          'Generate one with: openssl rand -base64 48',
-      );
+        'Generate one with: openssl rand -base64 48';
+      (nodeEnv === 'production' ? problems : warnings).push(message);
     }
   }
 
-  /*
-   * The most consequential misconfiguration this codebase has: the owner role
-   * can bypass row-level security, so pointing the API at it leaves every
-   * tenant policy in place and enforcing nothing. main.ts refuses to boot on
-   * it, but only after a build and a deploy — catching it here saves the trip.
-   */
-  if (raw.DATABASE_ADMIN_URL && raw.DATABASE_URL === raw.DATABASE_ADMIN_URL) {
-    problems.push(
-      'DATABASE_URL and DATABASE_ADMIN_URL are the same connection. The admin URL is the ' +
-        'owner, which can bypass row-level security. Run `pnpm db:provision`, then point ' +
-        'DATABASE_URL at the application role it creates.',
-    );
-  }
 
   if (nodeEnv === 'production') {
     for (const name of [
