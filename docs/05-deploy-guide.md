@@ -50,6 +50,18 @@ CORS_ALLOWED_ORIGINS=      # the Vercel FE domains
 
 - Run TypeORM migrations on deploy (in the start command), never `synchronize: true` in production.
 - **RLS policies are migrations** — they ship with the schema.
+### Check the environment before deploying
+
+```bash
+NODE_ENV=production DATABASE_URL=... JWT_ACCESS_SECRET=... pnpm env:check
+```
+
+Runs the real validator plus the checks that are not validation errors — a
+value can be well-formed and still wrong for production — and prints every
+problem at once. A boot reports only the first thing it trips over, and each
+round trip costs a build. It connects to nothing, so it is safe to run against
+production values.
+
 ### Managed Postgres: provisioning the application role
 
 Managed providers hand you an owner that can bypass RLS. Neon's `neondb_owner`
