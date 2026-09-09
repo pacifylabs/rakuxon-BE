@@ -3,6 +3,7 @@ import 'dotenv/config';
 import { DataSource, IsNull } from 'typeorm';
 
 import { buildDataSourceOptions } from '../src/database/data-source';
+import { withReconnect } from './lib/resilient-db';
 import { Institution } from '../src/modules/catalogue/entities/institution.entity';
 
 /**
@@ -132,11 +133,13 @@ async function main(): Promise<void> {
   const repo = dataSource.getRepository(Institution);
 
   try {
-    const pending = await repo.find({
-      where: recheck ? {} : { enrichedAt: IsNull() },
-      select: { id: true, sourceUrl: true },
-      order: { name: 'ASC' },
-    });
+    const pending = await withReconnect(dataSource, () =>
+      repo.find({
+        where: recheck ? {} : { enrichedAt: IsNull() },
+        select: { id: true, sourceUrl: true },
+        order: { name: 'ASC' },
+      }),
+    );
 
     const withSource = pending.filter((row) => row.sourceUrl);
     process.stdout.write(`${withSource.length} institutions to enrich\n`);
@@ -175,10 +178,9 @@ async function main(): Promise<void> {
          * Rows with no Wikidata match are stamped too. Otherwise every run
          * retries the same misses forever and never reaches new records.
          */
-        await repo.update(id, {
-          ...(values ?? {}),
-          enrichedAt: stamped,
-        });
+        await withReconnect(dataSource, () =>
+          repo.update(id, { ...(values ?? {}), enrichedAt: stamped }),
+        );
 
         if (values) matched += 1;
       }
