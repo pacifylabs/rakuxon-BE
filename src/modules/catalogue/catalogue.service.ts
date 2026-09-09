@@ -3,6 +3,7 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Brackets, DataSource, Repository } from 'typeorm';
 
 import { PublishStatus } from '../../contract/enums';
+import { Article } from './entities/article.entity';
 import { Institution } from './entities/institution.entity';
 import type {
   CountryCountDto,
@@ -10,6 +11,12 @@ import type {
   InstitutionSummaryDto,
   ListInstitutionsQueryDto,
 } from './dto/institution.dto';
+import type {
+  ArticleDetailDto,
+  ArticleListDto,
+  ArticleSummaryDto,
+  ListArticlesQueryDto,
+} from './dto/article.dto';
 import type { HighlightSegmentDto, SearchResponseDto, SearchResultDto } from './dto/search.dto';
 
 /** Below this, a query matches most of the catalogue and ranks nothing. */
@@ -31,6 +38,7 @@ export class CatalogueService {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     @InjectRepository(Institution) private readonly institutions: Repository<Institution>,
+    @InjectRepository(Article) private readonly articles: Repository<Article>,
   ) {}
 
   /**
@@ -123,6 +131,85 @@ export class CatalogueService {
     if (!found) throw new NotFoundException('No such university.');
 
     return found;
+  }
+
+  /**
+   * The guidance listing.
+   *
+   * Ordered newest first, with rows that have no publish date last rather than
+   * first — Postgres sorts NULLs first on DESC, which would put every undated
+   * draft-turned-published article above this month's writing.
+   */
+  async listArticles(query: ListArticlesQueryDto): Promise<ArticleListDto> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 12;
+
+    const builder = this.articles
+      .createQueryBuilder('a')
+      .where('a.status = :status', { status: PublishStatus.Published });
+
+    if (query.country) builder.andWhere('a.countryCode = :country', { country: query.country });
+    /* Array containment, not ILIKE over a joined string: "visa" must not match
+       the tag "visa-refusal-appeals" and quietly widen the filter. */
+    if (query.tag) builder.andWhere('a.tags @> ARRAY[:tag]::text[]', { tag: query.tag });
+
+    builder
+      .orderBy('a.publishedAt', 'DESC', 'NULLS LAST')
+      .addOrderBy('a.title', 'ASC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    const [rows, total] = await builder.getManyAndCount();
+
+    /*
+     * The tag list comes from the whole published set, not this page: a filter
+     * bar built from the twelve visible rows loses options as you paginate,
+     * and offers none at all once a filter has narrowed the page to one.
+     */
+    const tagRows = (await this.articles
+      .createQueryBuilder('a')
+      .select('DISTINCT unnest(a.tags)', 'tag')
+      .where('a.status = :status', { status: PublishStatus.Published })
+      .orderBy('tag', 'ASC')
+      .getRawMany()) as { tag: string }[];
+
+    return {
+      items: rows.map((row) => this.toArticleSummary(row)),
+      total,
+      page,
+      pageCount: Math.max(1, Math.ceil(total / limit)),
+      tags: tagRows.map((row) => row.tag),
+    };
+  }
+
+  async articleBySlug(slug: string): Promise<ArticleDetailDto> {
+    const found = await this.articles.findOne({
+      where: { slug, status: PublishStatus.Published },
+    });
+
+    if (!found) throw new NotFoundException('No such article.');
+
+    return {
+      ...this.toArticleSummary(found),
+      body: found.body,
+      source: found.source ?? undefined,
+      sourceUrl: found.sourceUrl ?? undefined,
+    };
+  }
+
+  private toArticleSummary(row: Article): ArticleSummaryDto {
+    return {
+      id: row.id,
+      slug: row.slug,
+      title: row.title,
+      excerpt: row.excerpt ?? undefined,
+      heroImageUrl: row.heroImageUrl ?? undefined,
+      countryCode: row.countryCode ?? undefined,
+      tags: row.tags,
+      readMinutes: row.readMinutes ?? undefined,
+      author: row.author ?? undefined,
+      publishedAt: row.publishedAt?.toISOString(),
+    };
   }
 
   private toSummary(row: Institution, courseCount: number): InstitutionSummaryDto {

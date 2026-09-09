@@ -7,6 +7,7 @@ import {
   InstitutionListDto,
   ListInstitutionsQueryDto,
 } from './dto/institution.dto';
+import { ArticleDetailDto, ArticleListDto, ListArticlesQueryDto } from './dto/article.dto';
 import { SearchQueryDto, SearchResponseDto } from './dto/search.dto';
 import { Institution } from './entities/institution.entity';
 import { Public } from '../../common/auth/public.decorator';
@@ -72,5 +73,25 @@ export class CatalogueController {
   @ApiNotFoundResponse({ description: 'No published university with that slug.' })
   institution(@Param('slug') slug: string): Promise<Institution> {
     return this.catalogue.institutionBySlug(slug);
+  }
+
+  @Public()
+  @Get('articles')
+  @ApiOperation({
+    summary: 'Published guidance, newest first',
+    description: 'Filterable by destination or tag. Cards only — bodies come from the detail route.',
+  })
+  @ApiOkResponse({ type: ArticleListDto })
+  listArticles(@Query() query: ListArticlesQueryDto): Promise<ArticleListDto> {
+    return this.catalogue.listArticles(query);
+  }
+
+  @Public()
+  @Get('articles/:slug')
+  @ApiOperation({ summary: 'One article, with its body' })
+  @ApiOkResponse({ type: ArticleDetailDto })
+  @ApiNotFoundResponse({ description: 'No published article with that slug.' })
+  article(@Param('slug') slug: string): Promise<ArticleDetailDto> {
+    return this.catalogue.articleBySlug(slug);
   }
 }
