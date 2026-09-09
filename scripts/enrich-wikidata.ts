@@ -48,6 +48,22 @@ interface Binding {
 /** "https://ror.org/04xvc2q17" -> "04xvc2q17", which is what Wikidata stores. */
 const rorId = (sourceUrl: string) => sourceUrl.replace(/^.*\/(?=[^/]+$)/, '');
 
+/**
+ * Makes a Commons file reference usable from a browser.
+ *
+ * Wikidata returns these as http:// pointers to Special:FilePath, which serves
+ * the original upload. Two problems, both fatal in a page: http on an https
+ * site is blocked as mixed content before it is ever requested, and the
+ * original is whatever resolution someone uploaded — occasionally several
+ * megabytes for something rendered at 48px. Special:FilePath takes a width
+ * parameter and resizes server-side, so ask for the size we actually use.
+ */
+const commonsThumb = (url: string, width = 320): string => {
+  const https = url.replace(/^http:\/\//, 'https://');
+  if (!https.includes('/Special:FilePath/')) return https;
+  return `${https}${https.includes('?') ? '&' : '?'}width=${width}`;
+};
+
 function buildQuery(ids: readonly string[]): string {
   const values = ids.map((id) => `"${id}"`).join(' ');
 
@@ -121,7 +137,10 @@ function fold(rows: readonly Binding[]): Enrichment {
     foundedYear: years.length > 0 ? Math.min(...years) : null,
     /* Largest reported enrolment: the smaller figures are usually one campus. */
     studentCount: students.length > 0 ? Math.max(...students) : null,
-    logoUrl: rows.find((row) => row.logo?.value)?.logo?.value ?? null,
+    logoUrl: (() => {
+      const found = rows.find((row) => row.logo?.value)?.logo?.value;
+      return found ? commonsThumb(found) : null;
+    })(),
     wikidataId: rows[0]?.item?.value?.split('/').pop() ?? null,
   };
 }
