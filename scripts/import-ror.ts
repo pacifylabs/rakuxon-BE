@@ -88,6 +88,10 @@ interface RorOrganization {
 
 const MAX_ATTEMPTS = 4;
 
+/** Countries per request. Large enough to matter, small enough that a failed
+    batch is cheap to retry. */
+const BATCH_SIZE = 5;
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** "Université de Montréal" must reach universite-de-montreal, not universit-de-montral. */
@@ -125,12 +129,21 @@ function aliases(org: RorOrganization, primary: string): string[] {
  * dropped connection; treating that as fatal is the bug, not the network.
  */
 async function fetchPage(
-  countryCode: string,
+  countryCodes: readonly string[],
   page: number,
   attempt = 1,
 ): Promise<{ items: RorOrganization[]; total: number }> {
-  const filter = `types:education,locations.geonames_details.country_code:${countryCode}`;
-  const url = `${ROR_ENDPOINT}?filter=${encodeURIComponent(filter)}&page=${page}`;
+  /*
+   * One request per batch of countries rather than per country.
+   *
+   * `filter` combines terms with AND, so it cannot express "GB or IE".
+   * `query.advanced` takes Elasticsearch syntax and can, which turns twenty
+   * paginated streams into four — and, because the existing-rows index is
+   * loaded once per stream, twenty full-table reads into four as well.
+   */
+  const countries = countryCodes.join(' OR ');
+  const advanced = `types:education AND locations.geonames_details.country_code:(${countries})`;
+  const url = `${ROR_ENDPOINT}?query.advanced=${encodeURIComponent(advanced)}&page=${page}`;
 
   try {
     const response = await fetch(url, { headers: { accept: 'application/json' } });
@@ -155,13 +168,13 @@ async function fetchPage(
 
     /* Exponential backoff: 1s, 2s, 4s. */
     await sleep(1000 * 2 ** (attempt - 1));
-    return fetchPage(countryCode, page, attempt + 1);
+    return fetchPage(countryCodes, page, attempt + 1);
   }
 }
 
-async function importCountry(
+async function importCountries(
   dataSource: DataSource,
-  countryCode: string,
+  countryCodes: readonly string[],
   includeSchools: boolean,
 ): Promise<{ seen: number; written: number }> {
   const repo = dataSource.getRepository(Institution);
@@ -180,13 +193,22 @@ async function importCountry(
     existing.filter((row) => row.sourceUrl).map((row) => [row.sourceUrl as string, row.id]),
   );
   const slugOwner = new Map(existing.map((row) => [row.slug, row.sourceUrl ?? '']));
+
+  /*
+   * ROR's pagination is not stable: the same organisation comes back on more
+   * than one page — 106 items for one batch contained only 95 distinct ids.
+   * Without this the counter double-counts and the run reports more imported
+   * than the table holds, which is exactly the discrepancy that prompted the
+   * check.
+   */
+  const processed = new Set<string>();
   let page = 1;
   let seen = 0;
   let written = 0;
   let total = Infinity;
 
   while (seen < total) {
-    const { items, total: reported } = await fetchPage(countryCode, page);
+    const { items, total: reported } = await fetchPage(countryCodes, page);
     total = reported;
     if (items.length === 0) break;
 
@@ -195,7 +217,9 @@ async function importCountry(
       const name = displayName(org);
       const location = org.locations?.[0]?.geonames_details;
       if (!name || !org.id || !location?.country_code) continue;
+      if (processed.has(org.id)) continue;
       if (!includeSchools && !HIGHER_ED.test(fold(name))) continue;
+      processed.add(org.id);
 
       /*
        * Slug collisions are real: "Trinity College" exists in several
@@ -218,7 +242,7 @@ async function importCountry(
         slug,
         name,
         aka: aliases(org, name),
-        country: location.country_name ?? countryCode,
+        country: location.country_name ?? location.country_code,
         countryCode: location.country_code.toUpperCase(),
         city: location.name ?? null,
         website: org.links?.find((link) => link.type === 'website')?.value ?? null,
@@ -266,16 +290,20 @@ async function main(): Promise<void> {
 
     const failed: string[] = [];
 
-    for (const countryCode of countries) {
-      process.stdout.write(`${countryCode} ... `);
+    /* Batched, but not all at once: a single failure should cost one batch to
+       re-run, not the whole world. */
+    for (let index = 0; index < countries.length; index += BATCH_SIZE) {
+      const batch = countries.slice(index, index + BATCH_SIZE);
+      process.stdout.write(`${batch.join('+')} ... `);
+
       try {
-        const { seen, written } = await importCountry(dataSource, countryCode, includeSchools);
+        const { seen, written } = await importCountries(dataSource, batch, includeSchools);
         grandTotal += written;
         process.stdout.write(`${written} kept of ${seen} listed\n`);
       } catch (error) {
-        /* One country failing must not cost the others. The import is
+        /* One batch failing must not cost the others. The import is
            idempotent, so a re-run picks up exactly what was missed. */
-        failed.push(countryCode);
+        failed.push(...batch);
         process.stdout.write(
           `failed (${error instanceof Error ? error.message : String(error)})\n`,
         );
