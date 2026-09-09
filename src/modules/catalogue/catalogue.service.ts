@@ -1,8 +1,15 @@
-import { Injectable } from '@nestjs/common';
-import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { Brackets, DataSource, Repository } from 'typeorm';
 
 import { PublishStatus } from '../../contract/enums';
+import { Institution } from './entities/institution.entity';
+import type {
+  CountryCountDto,
+  InstitutionListDto,
+  InstitutionSummaryDto,
+  ListInstitutionsQueryDto,
+} from './dto/institution.dto';
 import type { HighlightSegmentDto, SearchResponseDto, SearchResultDto } from './dto/search.dto';
 
 /** Below this, a query matches most of the catalogue and ranks nothing. */
@@ -21,7 +28,118 @@ interface SearchRow {
 
 @Injectable()
 export class CatalogueService {
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    @InjectRepository(Institution) private readonly institutions: Repository<Institution>,
+  ) {}
+
+  /**
+   * The country menu.
+   *
+   * Counts come from the same published set the listing uses, so a country
+   * cannot advertise 456 universities and then show an empty page — which is
+   * what happens when a menu is hard-coded beside a filtered list.
+   */
+  async countries(): Promise<CountryCountDto[]> {
+    const rows = (await this.institutions
+      .createQueryBuilder('i')
+      .select('i.countryCode', 'countryCode')
+      .addSelect('MIN(i.country)', 'country')
+      .addSelect('COUNT(*)::int', 'institutions')
+      .where('i.status = :status', { status: PublishStatus.Published })
+      .groupBy('i.countryCode')
+      .orderBy('MIN(i.country)', 'ASC')
+      .getRawMany()) as CountryCountDto[];
+
+    return rows;
+  }
+
+  async listInstitutions(query: ListInstitutionsQueryDto): Promise<InstitutionListDto> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 24;
+
+    const builder = this.institutions
+      .createQueryBuilder('i')
+      .where('i.status = :status', { status: PublishStatus.Published });
+
+    if (query.country) builder.andWhere('i.countryCode = :country', { country: query.country });
+
+    if (query.q?.trim()) {
+      const term = `%${query.q.trim()}%`;
+      /*
+       * ILIKE over name, city and the acronym array rather than the tsvector:
+       * this is a browse filter, not a typeahead, so a partial word has to
+       * match anywhere in the string — "chester" should find Manchester.
+       */
+      builder.andWhere(
+        new Brackets((where) => {
+          where
+            .where('i.name ILIKE :term', { term })
+            .orWhere('i.city ILIKE :term', { term })
+            .orWhere('array_to_string(i.aka, \' \') ILIKE :term', { term });
+        }),
+      );
+    }
+
+    builder
+      .orderBy(query.sort === 'city' ? 'i.city' : 'i.name', 'ASC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    const [rows, total] = await builder.getManyAndCount();
+
+    /*
+     * Course counts in one grouped query rather than one per institution.
+     * Twenty-four extra round trips per page is how a listing gets slow
+     * without anyone noticing which line did it.
+     */
+    const counts = new Map<string, number>();
+    if (rows.length > 0) {
+      const raw = (await this.dataSource.query(
+        `SELECT "institutionId", count(*)::int AS n FROM courses
+         WHERE status = $1 AND "institutionId" = ANY($2::uuid[])
+         GROUP BY "institutionId"`,
+        [PublishStatus.Published, rows.map((row) => row.id)],
+      )) as { institutionId: string; n: number }[];
+
+      for (const row of raw) counts.set(row.institutionId, row.n);
+    }
+
+    return {
+      items: rows.map((row) => this.toSummary(row, counts.get(row.id) ?? 0)),
+      total,
+      page,
+      pageCount: Math.max(1, Math.ceil(total / limit)),
+    };
+  }
+
+  async institutionBySlug(slug: string): Promise<Institution> {
+    const found = await this.institutions.findOne({
+      where: { slug, status: PublishStatus.Published },
+    });
+
+    /* 404 rather than 403 for an unpublished record: whether a draft exists is
+       not something an anonymous visitor should be able to probe for. */
+    if (!found) throw new NotFoundException('No such university.');
+
+    return found;
+  }
+
+  private toSummary(row: Institution, courseCount: number): InstitutionSummaryDto {
+    return {
+      id: row.id,
+      slug: row.slug,
+      name: row.name,
+      aka: row.aka,
+      country: row.country,
+      countryCode: row.countryCode,
+      city: row.city ?? undefined,
+      website: row.website ?? undefined,
+      logoUrl: row.logoUrl ?? undefined,
+      fastTrackOffer: row.fastTrackOffer,
+      courseCount,
+    };
+  }
 
   /**
    * One ranked list across universities, courses and articles.
