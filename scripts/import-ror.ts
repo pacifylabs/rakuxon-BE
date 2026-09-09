@@ -32,14 +32,45 @@ const DEFAULT_COUNTRIES = [
 ] as const;
 
 /**
- * Higher education, roughly.
+ * Higher education, roughly, in the languages these countries use.
  *
  * ROR's `education` type covers primary and secondary schools too, and a
  * study-abroad catalogue listing a grammar school is noise a human then has to
- * clear. Deliberately excludes a bare "school", which matches far more
- * secondary schools than it does schools of medicine.
+ * clear.
+ *
+ * The first version matched English only, and quietly dropped most of the
+ * non-English world: Universidad, Hochschule, Uniwersytet, Politecnico and
+ * Egyetem all failed it, which is why Germany returned fifteen institutions
+ * and Spain fifty-nine. Names are compared with accents stripped, so
+ * "Université" and "Universite" behave the same.
+ *
+ * A bare "school" is still excluded — it matches far more secondary schools
+ * than it does schools of medicine.
  */
-const HIGHER_ED = /universit|college|institute|polytechnic|conservatoire|academy of|school of/i;
+const HIGHER_ED = new RegExp(
+  [
+    'universit', // English, French, Dutch, Italian, Malay, German (Universität)
+    'universidad', // Spanish
+    'universidade', // Portuguese
+    'uniwersytet', // Polish
+    'hochschule', // German, incl. Fachhochschule
+    'college',
+    'institut', // English, French, German, Spanish
+    'politec|politehnic|politechnik', // Italian, Spanish, Polish
+    'polytechnic',
+    'egyetem|foiskola', // Hungarian
+    'academi|akadem|accademia', // English, Polish, German, Italian
+    'conservatoire|conservatorio',
+    'ecole|escuela|escola|scuola', // French, Spanish, Portuguese, Italian
+    'hogeschool', // Dutch
+    'kolej', // Malay
+    'school of',
+  ].join('|'),
+  'i',
+);
+
+/** Accents stripped, so one spelling of a word matches the other. */
+const fold = (value: string) => value.normalize('NFD').replace(/[̀-ͯ]/g, '');
 
 interface RorName {
   value?: string;
@@ -164,7 +195,7 @@ async function importCountry(
       const name = displayName(org);
       const location = org.locations?.[0]?.geonames_details;
       if (!name || !org.id || !location?.country_code) continue;
-      if (!includeSchools && !HIGHER_ED.test(name)) continue;
+      if (!includeSchools && !HIGHER_ED.test(fold(name))) continue;
 
       /*
        * Slug collisions are real: "Trinity College" exists in several
