@@ -86,6 +86,21 @@ export class Institution {
   @Column({ type: 'text', nullable: true })
   employability!: string | null;
 
+  /** Year founded. A real anchor on a page that would otherwise be a name. */
+  @Column({ type: 'int', nullable: true })
+  foundedYear!: number | null;
+
+  /** Total enrolment, where a source publishes one. */
+  @Column({ type: 'int', nullable: true })
+  studentCount!: number | null;
+
+  @Column({ type: 'text', nullable: true })
+  wikidataId!: string | null;
+
+  /** Null until enrichment has run, which is how a resumed run finds its work. */
+  @Column({ type: 'timestamptz', nullable: true })
+  enrichedAt!: Date | null;
+
   /**
    * Lowest published international tuition, for the "from" figure on a card.
    *

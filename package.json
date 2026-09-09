@@ -26,7 +26,8 @@
     "migration:run:prod": "node -r reflect-metadata ./node_modules/typeorm/cli.js migration:run -d dist/database/data-source.js",
     "start:migrate": "pnpm migration:run:prod && pnpm start:prod",
     "env:check": "ts-node -T scripts/check-env.ts",
-    "catalogue:import:ror": "ts-node -T scripts/import-ror.ts"
+    "catalogue:import:ror": "ts-node -T scripts/import-ror.ts",
+    "catalogue:enrich": "ts-node -T scripts/enrich-wikidata.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
