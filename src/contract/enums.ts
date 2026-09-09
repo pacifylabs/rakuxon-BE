@@ -25,3 +25,44 @@ export enum UserStatus {
   Active = 'active',
   Suspended = 'suspended',
 }
+
+/* ------------------------------------------------------------- catalogue */
+
+/**
+ * Whether a record is visible to the public site.
+ *
+ * Everything imported lands as `draft`. Publishing is a deliberate act,
+ * because a wrong fee or deadline on a real university is something a student
+ * plans around.
+ */
+export enum PublishStatus {
+  Draft = 'draft',
+  Published = 'published',
+  Suspended = 'suspended',
+}
+
+export enum StudyLevel {
+  Foundation = 'foundation',
+  Undergraduate = 'undergraduate',
+  Postgraduate = 'postgraduate',
+  Research = 'research',
+}
+
+export enum StudyMode {
+  FullTime = 'full_time',
+  PartTime = 'part_time',
+  Online = 'online',
+  Hybrid = 'hybrid',
+}
+
+/** Whether a tuition figure covers one year or the whole course. */
+export enum TuitionPeriod {
+  Year = 'year',
+  Course = 'course',
+}
+
+export enum IntakeStatus {
+  Open = 'open',
+  ClosingSoon = 'closing_soon',
+  Closed = 'closed',
+}
