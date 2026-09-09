@@ -21,13 +21,15 @@ describe('catalogue search', () => {
     await dataSource.query(`
       INSERT INTO institutions (slug,name,aka,country,"countryCode",city,status) VALUES
         ('probe-manchester','University of Manchester','{UoM}','United Kingdom','GB','Manchester','published'),
+        ('probe-vista','Buena Vista University','{}','United States','US','Storm Lake','published'),
         ('probe-draft','University of Nowhere','{}','United Kingdom','GB','Nowhere','draft');
       INSERT INTO courses (slug,"institutionId",title,level,"durationMonths",overview,disciplines,status)
         SELECT 'probe-course', id, 'MSc Data Science', 'postgraduate', 12, 'Applied data science.',
                '{Computer science}', 'published'
         FROM institutions WHERE slug='probe-manchester';
       INSERT INTO articles (slug,title,body,excerpt,"countryCode",status) VALUES
-        ('probe-article','The UK student visa, step by step','Body.','A walkthrough.','GB','published');
+        ('probe-article','The UK student visa, step by step','Body.','A walkthrough.','GB','published'),
+        ('probe-funds','Proof of funds','Most refusals turn on the visa evidence, not the balance.','What is checked.',null,'published');
     `);
   });
 
@@ -75,6 +77,18 @@ describe('catalogue search', () => {
   it('puts the university above its own courses for a name query', async () => {
     const { body } = await search('manchester').expect(200);
     expect(body.items[0].type).toBe('institution');
+  });
+
+  it('ranks a body match above a fuzzy near-match on a name', async () => {
+    // "Proof of funds" contains "visa" in its text and nowhere in its title,
+    // so trigram similarity against the title scores near zero while
+    // "Buena Vista" scores high. Summing ts_rank (0.0-0.1) with
+    // word_similarity (0.0-1.0) therefore put every Vista above it — the two
+    // signals were never on the same scale.
+    const { body } = await search('visa').expect(200);
+    const order = body.items.map((item: { slug: string }) => item.slug);
+
+    expect(order.indexOf('probe-funds')).toBeLessThan(order.indexOf('probe-vista'));
   });
 
   it('never returns a draft record', async () => {

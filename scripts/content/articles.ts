@@ -175,7 +175,7 @@ If a refusal does come, read the letter closely. Financial refusals name the spe
     excerpt:
       'The steps have dependencies, and the expensive mistakes come from doing them out of sequence.',
     countryCode: 'GB',
-    tags: ['visas', 'united-kingdom'],
+    tags: ['visas', 'applications'],
     readMinutes: 7,
     publishedAt: '2026-02-25',
     body: `The UK Student route is well documented and still routinely goes wrong, because the documentation explains each step without making the dependencies obvious. Several steps cannot start until an earlier one finishes, and one of them is slow.
@@ -226,7 +226,7 @@ Processing times are published by UKVI per country and vary considerably by seas
     excerpt:
       'A study permit is not the offer. Provincial attestation, designated institutions and proof of ties are separate hurdles.',
     countryCode: 'CA',
-    tags: ['visas', 'canada'],
+    tags: ['visas', 'applications'],
     readMinutes: 6,
     publishedAt: '2026-03-10',
     body: `An acceptance letter from a Canadian institution is necessary and not sufficient. The study permit is a separate decision made by Immigration, Refugees and Citizenship Canada against criteria the university has no say over — and Canada's requirements have changed materially in recent years, more than once.
@@ -269,7 +269,7 @@ Post-graduation work permit eligibility depends on the institution, the credenti
     excerpt:
       'One-year masters, English-speaking, in the EU. What that combination is good for, and what it costs in practice.',
     countryCode: 'IE',
-    tags: ['ireland', 'postgraduate', 'choosing'],
+    tags: ['postgraduate', 'choosing'],
     readMinutes: 5,
     publishedAt: '2026-03-24',
     body: `Ireland occupies a specific niche: English-language teaching, an EU member state, and taught masters degrees that typically run a single year. For someone who wants a European qualification without adding a language and without two years out of work, the combination is genuinely hard to replicate.
@@ -311,7 +311,7 @@ Check the specific department rather than the institution. Ireland's universitie
     excerpt:
       'Public universities charge little or no tuition. The blocked account, the language requirement and the admissions system are where the effort goes.',
     countryCode: 'DE',
-    tags: ['germany', 'finance', 'choosing'],
+    tags: ['finance', 'choosing'],
     readMinutes: 6,
     publishedAt: '2026-04-07',
     body: `Germany's public universities charge no tuition, or a nominal semester contribution, to international students in most states and at most levels. That is real, and it is the reason Germany appears on so many shortlists.

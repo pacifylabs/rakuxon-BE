@@ -326,16 +326,31 @@ const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\
 /*
  * $1 prefix tsquery, $2 raw query for trigram, $3 published status, $4 limit.
  *
+ * Ranking is built from three terms, in descending order of how much they mean:
+ *
+ * 1. A flat bonus for matching the full-text query at all. This exists because
+ *    the two signals are on incompatible scales — ts_rank returns roughly
+ *    0.0-0.1, word_similarity returns 0.0-1.0 — so summing them raw let every
+ *    fuzzy near-match outrank every exact one. Searching "visa" returned five
+ *    institutions with "Vista" in the name and buried the visa guidance, which
+ *    is the whole reason this is written out rather than added together.
+ * 2. ts_rank itself, scaled up, to order the rows that did match.
+ * 3. Trigram similarity, weighted below both, so it decides ties and still
+ *    catches the typo or half-typed word that full-text cannot.
+ *
  * Institutions are nudged above courses at equal rank: someone typing a
  * university's name wants the university, not four of its own courses stacked
- * on top of it.
+ * on top of it. A flat bonus again, because a multiplier on a number that
+ * small was not a nudge at all.
  */
 const MATCHED_ROWS = `
   SELECT 'institution' AS type, i.id::text, i.slug::text, i.name,
          NULLIF(concat_ws(', ', i.city, i.country), '') AS subtitle,
          i."countryCode",
-         ts_rank(i."searchVector", to_tsquery('english', $1)) * 1.5
-           + word_similarity($2, i.name) AS rank
+         (i."searchVector" @@ to_tsquery('english', $1))::int
+           + ts_rank(i."searchVector", to_tsquery('english', $1)) * 4
+           + word_similarity($2, i.name) * 0.6
+           + 0.15 AS rank
   FROM institutions i
   WHERE i.status = $3
     AND (i."searchVector" @@ to_tsquery('english', $1) OR $2 <% i.name)
@@ -345,8 +360,10 @@ const MATCHED_ROWS = `
   SELECT 'course', c.id::text, c.slug::text, c.title,
          NULLIF(concat_ws(', ', inst.name, inst.country), ''),
          inst."countryCode",
-         ts_rank(c."searchVector", to_tsquery('english', $1))
-           + word_similarity($2, c.title)
+         (c."searchVector" @@ to_tsquery('english', $1))::int
+           + ts_rank(c."searchVector", to_tsquery('english', $1)) * 4
+           + word_similarity($2, c.title) * 0.6
+           + 0.05
   FROM courses c
   JOIN institutions inst ON inst.id = c."institutionId"
   WHERE c.status = $3
@@ -356,8 +373,9 @@ const MATCHED_ROWS = `
 
   SELECT 'article', a.id::text, a.slug::text, a.title,
          a.excerpt, a."countryCode",
-         ts_rank(a."searchVector", to_tsquery('english', $1)) * 0.8
-           + word_similarity($2, a.title)
+         (a."searchVector" @@ to_tsquery('english', $1))::int
+           + ts_rank(a."searchVector", to_tsquery('english', $1)) * 4
+           + word_similarity($2, a.title) * 0.6
   FROM articles a
   WHERE a.status = $3
     AND (a."searchVector" @@ to_tsquery('english', $1) OR $2 <% a.title)
