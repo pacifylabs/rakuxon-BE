@@ -42,24 +42,21 @@ describe('database migrations', () => {
     expect(row.id).toMatch(/^[0-9a-f-]{36}$/);
   });
 
-  it('rolls a reversible migration back without error', async () => {
+  it('rolls the most recent migration back and forward again', async () => {
     /*
-     * The most recent migration removes row-level security and refuses to run
-     * down(), because re-enabling policies without the application role and
-     * context helpers would deny every row to the API — an outage dressed as a
-     * rollback. So this walks back to the last reversible one, proving the
-     * mechanism still works, then re-applies everything.
+     * Deliberately not naming a migration. The first version asserted that
+     * undoing the last one threw, which was true only while the irreversible
+     * RemoveRowLevelSecurity happened to be last — adding the catalogue after
+     * it broke a test that was really asserting migration order.
      */
-    const reversible = dataSource.migrations.filter(
-      (migration) => migration.name !== 'RemoveRowLevelSecurity1757000400000',
-    );
-    expect(reversible.length).toBeGreaterThan(0);
+    const last = dataSource.migrations.at(-1);
+    expect(last).toBeDefined();
 
-    await expect(
-      dataSource.undoLastMigration({ transaction: 'all' }),
-    ).rejects.toThrow(/not reversible/);
-
+    await expect(dataSource.undoLastMigration()).resolves.not.toThrow();
     await dataSource.runMigrations();
+
+    const applied = await dataSource.query<{ name: string }[]>('SELECT name FROM migrations');
+    expect(applied.map((row) => row.name)).toContain(last?.name);
   });
 
   it('states why the last migration cannot be undone, rather than failing obscurely', async () => {
