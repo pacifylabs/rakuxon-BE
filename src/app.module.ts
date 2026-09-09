@@ -10,6 +10,7 @@ import { RolesGuard } from './common/rbac/roles.guard';
 import { TenantResolutionMiddleware } from './common/tenancy/tenant-resolution.middleware';
 import { buildDataSourceOptions } from './database/data-source';
 import { AuthModule } from './modules/auth/auth.module';
+import { CatalogueModule } from './modules/catalogue/catalogue.module';
 import { OnboardingLinksModule } from './modules/onboarding-links/onboarding-links.module';
 
 @Module({
@@ -19,6 +20,7 @@ import { OnboardingLinksModule } from './modules/onboarding-links/onboarding-lin
     NotificationsModule,
     HealthModule,
     AuthModule,
+    CatalogueModule,
     OnboardingLinksModule,
   ],
   providers: [
