@@ -94,6 +94,42 @@ const BATCH_SIZE = 5;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Postgres errors that mean "the connection went away", not "the data is wrong".
+ *
+ * A hosted database drops idle pooled connections, and Neon suspends a compute
+ * that has been quiet. Over an import that runs for minutes this is expected,
+ * not exceptional — the first version retried the HTTP fetch but left the
+ * writes bare, so two batches died on `Connection terminated unexpectedly` and
+ * `read ETIMEDOUT` after doing most of their work.
+ */
+const TRANSIENT_DB = /connection terminated|ETIMEDOUT|ECONNRESET|EPIPE|Connection lost|server closed/i;
+
+/**
+ * Runs a write, reconnecting if the pool has dropped underneath it.
+ *
+ * Retrying alone is not enough: once the DataSource is destroyed every
+ * subsequent query fails the same way, so it has to be re-initialised before
+ * the retry can succeed.
+ */
+async function withReconnect<T>(
+  dataSource: DataSource,
+  work: () => Promise<T>,
+  attempt = 1,
+): Promise<T> {
+  try {
+    return await work();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!TRANSIENT_DB.test(message) || attempt >= MAX_ATTEMPTS) throw error;
+
+    await sleep(1000 * 2 ** (attempt - 1));
+    if (!dataSource.isInitialized) await dataSource.initialize();
+
+    return withReconnect(dataSource, work, attempt + 1);
+  }
+}
+
 /** "Université de Montréal" must reach universite-de-montreal, not universit-de-montral. */
 function slugify(value: string): string {
   return value
@@ -188,7 +224,9 @@ async function importCountries(
    * hosted database is most of the runtime. One query up front is the same
    * information.
    */
-  const existing = await repo.find({ select: { id: true, slug: true, sourceUrl: true } });
+  const existing = await withReconnect(dataSource, () =>
+    repo.find({ select: { id: true, slug: true, sourceUrl: true } }),
+  );
   const bySource = new Map(
     existing.filter((row) => row.sourceUrl).map((row) => [row.sourceUrl as string, row.id]),
   );
@@ -259,9 +297,9 @@ async function importCountries(
        */
       const known = bySource.get(org.id);
       if (known) {
-        await repo.update(known, values);
+        await withReconnect(dataSource, () => repo.update(known, values));
       } else {
-        const inserted = await repo.insert(values);
+        const inserted = await withReconnect(dataSource, () => repo.insert(values));
         bySource.set(org.id, (inserted.identifiers[0] as { id: string }).id);
       }
       slugOwner.set(slug, org.id);
