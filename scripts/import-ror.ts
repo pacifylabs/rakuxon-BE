@@ -55,6 +55,8 @@ interface RorOrganization {
   }[];
 }
 
+const MAX_ATTEMPTS = 4;
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** "Université de Montréal" must reach universite-de-montreal, not universit-de-montral. */
@@ -83,22 +85,47 @@ function aliases(org: RorOrganization, primary: string): string[] {
   return [...new Set(found)];
 }
 
-async function fetchPage(countryCode: string, page: number): Promise<{
-  items: RorOrganization[];
-  total: number;
-}> {
+/**
+ * One page, retried.
+ *
+ * A single transient "fetch failed" used to abort the entire run — twelve
+ * countries in, on page four of Poland, taking the remaining eight with it.
+ * An import that walks thousands of pages over a public API will meet a
+ * dropped connection; treating that as fatal is the bug, not the network.
+ */
+async function fetchPage(
+  countryCode: string,
+  page: number,
+  attempt = 1,
+): Promise<{ items: RorOrganization[]; total: number }> {
   const filter = `types:education,locations.geonames_details.country_code:${countryCode}`;
   const url = `${ROR_ENDPOINT}?filter=${encodeURIComponent(filter)}&page=${page}`;
 
-  const response = await fetch(url, { headers: { accept: 'application/json' } });
-  if (!response.ok) throw new Error(`ROR responded ${response.status} for ${countryCode} p${page}`);
+  try {
+    const response = await fetch(url, { headers: { accept: 'application/json' } });
 
-  const payload = (await response.json()) as {
-    items?: RorOrganization[];
-    number_of_results?: number;
-  };
+    /* 429 and 5xx are worth retrying; a 400 means the query is wrong and will
+       stay wrong however many times it is sent. */
+    if (response.status === 429 || response.status >= 500) {
+      throw new Error(`ROR responded ${response.status}`);
+    }
+    if (!response.ok) {
+      throw Object.assign(new Error(`ROR responded ${response.status}`), { fatal: true });
+    }
 
-  return { items: payload.items ?? [], total: payload.number_of_results ?? 0 };
+    const payload = (await response.json()) as {
+      items?: RorOrganization[];
+      number_of_results?: number;
+    };
+
+    return { items: payload.items ?? [], total: payload.number_of_results ?? 0 };
+  } catch (error) {
+    if ((error as { fatal?: boolean }).fatal || attempt >= MAX_ATTEMPTS) throw error;
+
+    /* Exponential backoff: 1s, 2s, 4s. */
+    await sleep(1000 * 2 ** (attempt - 1));
+    return fetchPage(countryCode, page, attempt + 1);
+  }
 }
 
 async function importCountry(
@@ -108,6 +135,20 @@ async function importCountry(
 ): Promise<{ seen: number; written: number }> {
   const repo = dataSource.getRepository(Institution);
   const retrievedAt = new Date();
+
+  /*
+   * Both indexes are loaded once per country rather than queried per row.
+   *
+   * The first version issued a findOne for the slug and another for the
+   * sourceUrl on every institution — two round trips each, which against a
+   * hosted database is most of the runtime. One query up front is the same
+   * information.
+   */
+  const existing = await repo.find({ select: { id: true, slug: true, sourceUrl: true } });
+  const bySource = new Map(
+    existing.filter((row) => row.sourceUrl).map((row) => [row.sourceUrl as string, row.id]),
+  );
+  const slugOwner = new Map(existing.map((row) => [row.slug, row.sourceUrl ?? '']));
   let page = 1;
   let seen = 0;
   let written = 0;
@@ -132,11 +173,14 @@ async function importCountry(
        */
       const base = slugify(name);
       let slug = base;
-      const clash = await repo.findOne({ where: { slug }, select: { id: true, sourceUrl: true } });
-      if (clash && clash.sourceUrl !== org.id) {
+      const takenBySomeoneElse = (candidate: string) => {
+        const owner = slugOwner.get(candidate);
+        return owner !== undefined && owner !== org.id;
+      };
+
+      if (takenBySomeoneElse(slug)) {
         slug = `${base}-${location.country_code.toLowerCase()}`;
-        const second = await repo.findOne({ where: { slug }, select: { sourceUrl: true } });
-        if (second && second.sourceUrl !== org.id) slug = `${base}-${slugify(org.id.slice(-8))}`;
+        if (takenBySomeoneElse(slug)) slug = `${base}-${slugify(org.id.slice(-8))}`;
       }
 
       const values = {
@@ -158,8 +202,14 @@ async function importCountry(
        * matching on the derived slug would then create a second row for the
        * same institution rather than updating the one that exists.
        */
-      const existing = await repo.findOne({ where: { sourceUrl: org.id } });
-      await (existing ? repo.update(existing.id, values) : repo.insert(values));
+      const known = bySource.get(org.id);
+      if (known) {
+        await repo.update(known, values);
+      } else {
+        const inserted = await repo.insert(values);
+        bySource.set(org.id, (inserted.identifiers[0] as { id: string }).id);
+      }
+      slugOwner.set(slug, org.id);
       written += 1;
     }
 
@@ -183,11 +233,29 @@ async function main(): Promise<void> {
   try {
     let grandTotal = 0;
 
+    const failed: string[] = [];
+
     for (const countryCode of countries) {
       process.stdout.write(`${countryCode} ... `);
-      const { seen, written } = await importCountry(dataSource, countryCode, includeSchools);
-      grandTotal += written;
-      process.stdout.write(`${written} kept of ${seen} listed\n`);
+      try {
+        const { seen, written } = await importCountry(dataSource, countryCode, includeSchools);
+        grandTotal += written;
+        process.stdout.write(`${written} kept of ${seen} listed\n`);
+      } catch (error) {
+        /* One country failing must not cost the others. The import is
+           idempotent, so a re-run picks up exactly what was missed. */
+        failed.push(countryCode);
+        process.stdout.write(
+          `failed (${error instanceof Error ? error.message : String(error)})\n`,
+        );
+      }
+    }
+
+    if (failed.length > 0) {
+      process.stdout.write(
+        `\n${failed.length} country(ies) failed. Re-run just those:\n` +
+          `  pnpm catalogue:import:ror ${failed.join(' ')}\n`,
+      );
     }
 
     process.stdout.write(
