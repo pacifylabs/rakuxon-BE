@@ -1,3 +1,4 @@
+import { ForeignKey } from 'typeorm';
 import {
   Column,
   CreateDateColumn,
@@ -15,10 +16,26 @@ import type { EnglishTest, Intake, RequirementGroup, Scholarship } from './share
 
 /** A programme at an institution. Global, like its institution. */
 @Entity('courses')
+@ForeignKey('institutions', ['institutionId'], ['id'], { name: 'courses_institutionId_fkey', onDelete: 'CASCADE' })
+@Index('courses_disciplines_idx', { synchronize: false })
+@Index('courses_search_idx', { synchronize: false })
+@Index('courses_title_trgm_idx', { synchronize: false })
 @Index('courses_institution_idx', ['institutionId'])
 @Index('courses_level_idx', ['level'])
 @Index('courses_status_idx', ['status'])
 export class Course {
+  /** Keep the migration's generated search column when entity sync is enabled. */
+  @Column({
+    type: 'tsvector',
+    asExpression: `setweight(to_tsvector('english'::regconfig, coalesce("title", '')), 'A') || setweight(to_tsvector('english'::regconfig, immutable_array_to_string("disciplines", ' ')), 'B') || setweight(to_tsvector('english'::regconfig, coalesce("overview", '')), 'D')`,
+    generatedType: 'STORED',
+    select: false,
+    insert: false,
+    update: false,
+    nullable: true,
+  })
+  searchVector!: string;
+
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -36,7 +53,7 @@ export class Course {
   @Column({ type: 'text' })
   title!: string;
 
-  @Column({ type: 'enum', enum: StudyLevel })
+  @Column({ type: 'enum', enum: StudyLevel, enumName: 'study_level_enum' })
   level!: StudyLevel;
 
   /**
@@ -52,7 +69,7 @@ export class Course {
   @Column({ type: 'int' })
   durationMonths!: number;
 
-  @Column({ type: 'enum', enum: StudyMode, default: StudyMode.FullTime })
+  @Column({ type: 'enum', enum: StudyMode, enumName: 'study_mode_enum', default: StudyMode.FullTime })
   studyMode!: StudyMode;
 
   /** Which campus, where the institution has more than one. */
@@ -65,7 +82,7 @@ export class Course {
   @Column({ type: 'char', length: 3, nullable: true })
   tuitionCurrency!: string | null;
 
-  @Column({ type: 'enum', enum: TuitionPeriod, default: TuitionPeriod.Year })
+  @Column({ type: 'enum', enum: TuitionPeriod, enumName: 'tuition_period_enum', default: TuitionPeriod.Year })
   tuitionPeriod!: TuitionPeriod;
 
   /** True where the figure is the international rate rather than the home one. */
@@ -100,7 +117,7 @@ export class Course {
   @Column({ type: 'boolean', default: false })
   fastTrackOffer!: boolean;
 
-  @Column({ type: 'enum', enum: PublishStatus, default: PublishStatus.Draft })
+  @Column({ type: 'enum', enum: PublishStatus, enumName: 'publish_status_enum', default: PublishStatus.Draft })
   status!: PublishStatus;
 
   @Column({ type: 'text', nullable: true })

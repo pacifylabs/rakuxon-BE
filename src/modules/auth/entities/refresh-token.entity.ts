@@ -1,3 +1,4 @@
+import { ForeignKey } from 'typeorm';
 import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
 /**
@@ -9,6 +10,7 @@ import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn } from 
  * defence against a stolen refresh token being used alongside the real one.
  */
 @Entity('refresh_tokens')
+@ForeignKey('users', ['userId'], ['id'], { name: 'refresh_tokens_userId_fkey', onDelete: 'CASCADE' })
 @Index('refresh_tokens_family_idx', ['familyId'])
 export class RefreshToken {
   @PrimaryGeneratedColumn('uuid')

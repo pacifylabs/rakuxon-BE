@@ -1,6 +1,7 @@
 import { DataSource } from 'typeorm';
 
 import { buildDataSourceOptions } from '../../src/database/data-source';
+import { HOUSE_TENANT_ID } from '../../src/contract/constants';
 
 /**
  * The owner connection.
@@ -65,6 +66,24 @@ export async function truncateAll(): Promise<void> {
   const admin = await adminDataSource();
   await admin.query(
     'TRUNCATE TABLE "password_reset_tokens", "sso_identities", "onboarding_links", ' +
-      '"refresh_tokens", "users", "tenants" CASCADE',
+      /* "students", "documents", "applications" and "application_documents"
+         are FK-cascaded from "users"/"tenants" and would empty either way;
+         listed explicitly so none is missed if that changes. */
+      '"refresh_tokens", "users", "students", "documents", "applications", ' +
+      '"application_documents", "tenants" CASCADE',
+  );
+
+  /*
+   * The house tenant is seed data, not a suite's fixture — a real deployment
+   * never truncates it. It only exists via the migration that created it, and
+   * TRUNCATE does not know that; re-seeding it here is what keeps direct
+   * student registration working in every test file after the first one that
+   * truncates.
+   */
+  await admin.query(
+    `INSERT INTO "tenants" ("id", "name", "slug", "status")
+     VALUES ($1, 'Rakuxon', 'rakuxon-direct', 'active')
+     ON CONFLICT ("id") DO NOTHING`,
+    [HOUSE_TENANT_ID],
   );
 }

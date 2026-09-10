@@ -3,7 +3,9 @@ import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateCol
 import { TenantStatus } from '../../../contract/enums';
 
 /**
- * An agency. The root of every tenant-scoped row in the system.
+ * An agency — or the one house tenant a direct student signup belongs to
+ * (`HOUSE_TENANT_ID`, seeded by `StudentsAndHouseTenant1757000800000`). The
+ * root of every tenant-scoped row in the system.
  *
  * Global by nature — it is the table the RLS policies key off, so it carries
  * no tenant_id of its own.
@@ -20,7 +22,7 @@ export class Tenant {
   @Column({ type: 'citext', unique: true })
   slug!: string;
 
-  @Column({ type: 'enum', enum: TenantStatus, default: TenantStatus.Pending })
+  @Column({ type: 'enum', enum: TenantStatus, enumName: 'tenant_status_enum', default: TenantStatus.Pending })
   status!: TenantStatus;
 
   @CreateDateColumn({ type: 'timestamptz' })

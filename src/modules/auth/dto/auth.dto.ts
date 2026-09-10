@@ -3,8 +3,8 @@ import { IsEmail, IsNotEmpty, IsString, Matches, MaxLength, MinLength } from 'cl
 
 import { Role } from '../../../contract/enums';
 
-/** 12 characters, per NIST's length-over-composition guidance. */
-const PASSWORD_MIN = 12;
+/** 8 characters, per NIST's length-over-composition guidance. */
+const PASSWORD_MIN = 8;
 
 export class RegisterAgencyDto {
   @ApiProperty({ example: 'Northwind Education', description: 'Agency name.' })
@@ -27,11 +27,41 @@ export class RegisterAgencyDto {
   @IsEmail()
   email!: string;
 
-  @ApiProperty({ example: 'Ada Lovelace' })
+  @ApiProperty({ example: 'Ada' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(120)
-  fullName!: string;
+  @MaxLength(60)
+  firstName!: string;
+
+  @ApiProperty({ example: 'Lovelace' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(60)
+  lastName!: string;
+
+  @ApiProperty({ example: 'correct-horse-battery', minLength: PASSWORD_MIN })
+  @IsString()
+  @MinLength(PASSWORD_MIN)
+  @MaxLength(256)
+  password!: string;
+}
+
+export class RegisterStudentDto {
+  @ApiProperty({ example: 'ada@example.com' })
+  @IsEmail()
+  email!: string;
+
+  @ApiProperty({ example: 'Ada' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(60)
+  firstName!: string;
+
+  @ApiProperty({ example: 'Lovelace' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(60)
+  lastName!: string;
 
   @ApiProperty({ example: 'correct-horse-battery', minLength: PASSWORD_MIN })
   @IsString()
@@ -65,8 +95,11 @@ export class AuthUserDto {
   @ApiProperty({ example: 'ada@northwind.example' })
   email!: string;
 
-  @ApiProperty({ example: 'Ada Lovelace' })
-  fullName!: string;
+  @ApiProperty({ example: 'Ada' })
+  firstName!: string;
+
+  @ApiProperty({ example: 'Lovelace' })
+  lastName!: string;
 
   @ApiProperty({ enum: Role, enumName: 'Role' })
   role!: Role;
@@ -80,6 +113,14 @@ export class AuthUserDto {
     description: 'Null for a platform administrator.',
   })
   tenantId!: string | null;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description: 'Null until the address is confirmed. Not a sign-in gate.',
+  })
+  emailVerifiedAt!: string | null;
 }
 
 export class AuthTokensDto {
@@ -113,6 +154,13 @@ export class ConfirmPasswordResetDto {
   @MinLength(PASSWORD_MIN)
   @MaxLength(256)
   password!: string;
+}
+
+export class ConfirmEmailVerificationDto {
+  @ApiProperty({ description: 'The token from the verification link.' })
+  @IsString()
+  @IsNotEmpty()
+  token!: string;
 }
 
 export class SsoCallbackDto {

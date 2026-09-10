@@ -5,6 +5,7 @@ import { adminDataSource, truncateAll } from './admin-data-source';
 import { NOTIFICATION_PORT } from '../../src/common/notifications/notification.port';
 import { AppModule } from '../../src/app.module';
 import type {
+  EmailVerificationMessage,
   NotificationPort,
   PasswordResetMessage,
 } from '../../src/common/notifications/notification.port';
@@ -18,9 +19,14 @@ import type {
  */
 export class CapturingNotifications implements NotificationPort {
   readonly passwordResets: PasswordResetMessage[] = [];
+  readonly emailVerifications: EmailVerificationMessage[] = [];
 
   async sendPasswordReset(message: PasswordResetMessage): Promise<void> {
     this.passwordResets.push(message);
+  }
+
+  async sendEmailVerification(message: EmailVerificationMessage): Promise<void> {
+    this.emailVerifications.push(message);
   }
 
   /** The token out of the most recent reset link for an address. */
@@ -30,6 +36,17 @@ export class CapturingNotifications implements NotificationPort {
 
     const token = message.resetUrl.split('/reset-password/')[1];
     if (!token) throw new Error(`Reset URL had no token: ${message.resetUrl}`);
+
+    return token;
+  }
+
+  /** The token out of the most recent verification link for an address. */
+  latestVerificationTokenFor(email: string): string {
+    const message = [...this.emailVerifications].reverse().find((entry) => entry.to === email);
+    if (!message) throw new Error(`No verification email was sent to ${email}`);
+
+    const token = message.verifyUrl.split('/verify-email/')[1];
+    if (!token) throw new Error(`Verify URL had no token: ${message.verifyUrl}`);
 
     return token;
   }

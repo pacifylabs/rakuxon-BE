@@ -66,3 +66,12 @@ export class CountryCountDto {
   @ApiProperty({ example: 'United Kingdom' }) country!: string;
   @ApiProperty({ example: 456 }) institutions!: number;
 }
+
+/** One row of the full reference list, for a form dropdown. */
+export class CountryDto {
+  @ApiProperty({ example: 'GB' }) code!: string;
+  @ApiProperty({ example: 'United Kingdom' }) name!: string;
+  @ApiProperty({ description: 'Whether the catalogue has universities here.' })
+  isDestination!: boolean;
+  @ApiProperty({ example: '🇬🇧' }) flagEmoji!: string;
+}

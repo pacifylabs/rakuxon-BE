@@ -1,0 +1,33 @@
+# Separate project and ephemeral storage. Never points to production volumes.
+name: rakuxon-check
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: rakuxon
+      POSTGRES_USER: rakuxon
+      POSTGRES_PASSWORD: test-only-owner
+    tmpfs: [/var/lib/postgresql/data]
+    volumes: [./postgres/test-init.sql:/docker-entrypoint-initdb.d/test.sql:ro]
+    healthcheck:
+      test: [CMD, pg_isready, -U, rakuxon, -d, rakuxon]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  verify:
+    image: rakuxon-api-check
+    build:
+      context: ..
+      target: verify
+    depends_on:
+      db: {condition: service_healthy}
+    environment:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://rakuxon_app:test-only-password@db:5432/rakuxon
+      DATABASE_APP_USER: rakuxon_app
+      DATABASE_SSL: "false"
+      REDIS_URL: redis://unused:6379
+      JWT_ACCESS_SECRET: test-access-secret-that-is-long-enough-32
+      JWT_REFRESH_SECRET: test-refresh-secret-that-is-different-32
+      WEB_APP_URL: http://localhost:3000
+    command: [sh, -c, "pnpm migration:run && pnpm typecheck && pnpm test --runInBand && pnpm test:e2e && DATABASE_SYNCHRONIZE=true pnpm test:e2e"]

@@ -18,7 +18,8 @@ describe('password reset', () => {
         agencyName: 'Northwind',
         slug,
         email: `admin@${slug}.example`,
-        fullName: 'Ada Lovelace',
+        firstName: 'Ada',
+        lastName: 'Lovelace',
         password: 'correct-horse-battery',
       })
       .expect(201);

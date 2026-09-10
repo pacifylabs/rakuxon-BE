@@ -40,6 +40,8 @@ export const envSchema = z.object({
 
   DATABASE_URL: z.string().url('DATABASE_URL must be a valid connection URL'),
 
+  DATABASE_SYNCHRONIZE: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
+
   DATABASE_SSL: z
     .enum(['true', 'false'])
     .default('false')
@@ -93,6 +95,32 @@ export const envSchema = z.object({
           'CORS_ORIGINS entries each need a scheme and no path, e.g. https://app.example.com',
       },
     ),
+
+  /* Optional, like the Google SSO credentials: a deployment that has not
+     configured Cloudinary still boots, and the upload-signature endpoint
+     answers 400 rather than the process refusing to start. */
+  CLOUDINARY_CLOUD_NAME: z.string().optional(),
+  CLOUDINARY_API_KEY: z.string().optional(),
+  CLOUDINARY_API_SECRET: z.string().optional(),
+
+  /*
+   * Optional, same pattern: a deployment with none of these still boots, and
+   * falls back to the logging adapter (NotificationsModule picks between the
+   * two on SMTP_HOST + SMTP_FROM). Any real SMTP account works — Gmail,
+   * SendGrid/SES's SMTP relay, Mailtrap for a staging inbox that never reaches
+   * a real person.
+   */
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().int().positive().default(587),
+  /* STARTTLS (587) vs. implicit TLS (465, "secure" in nodemailer's terms). */
+  SMTP_SECURE: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASSWORD: z.string().optional(),
+  /** "Rakuxon <no-reply@rakuxon.com>" — passed straight through as the From header. */
+  SMTP_FROM: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -157,4 +185,17 @@ export function corsOrigins(env: Env): string[] {
     .filter(Boolean);
 
   return [...new Set([env.WEB_APP_URL, ...configured])];
+}
+
+/**
+ * Whether a real transport can be built.
+ *
+ * `SMTP_FROM` is required alongside the host, not just the host: a transport
+ * with nowhere to say mail is from would either crash on send or fall back to
+ * whatever nodemailer's own default is, and a wrong From address is a worse
+ * failure than not sending at all — the message would go out looking like a
+ * misconfiguration rather than a Rakuxon email.
+ */
+export function smtpConfigured(env: Env): boolean {
+  return Boolean(env.SMTP_HOST && env.SMTP_FROM);
 }

@@ -1,3 +1,4 @@
+import { ForeignKey } from 'typeorm';
 import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
 /**
@@ -7,6 +8,7 @@ import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn } from 
  * an inbox, which is a far more exposed place than an app's memory.
  */
 @Entity('password_reset_tokens')
+@ForeignKey('users', ['userId'], ['id'], { name: 'password_reset_tokens_userId_fkey', onDelete: 'CASCADE' })
 @Index('password_reset_tokens_user_idx', ['userId'])
 export class PasswordResetToken {
   @PrimaryGeneratedColumn('uuid')

@@ -1,7 +1,9 @@
+import { ForeignKey } from 'typeorm';
 import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
 /** Links a provider account to a platform user. */
 @Entity('sso_identities')
+@ForeignKey('users', ['userId'], ['id'], { name: 'sso_identities_userId_fkey', onDelete: 'CASCADE' })
 @Index('sso_identities_provider_account_unique', ['provider', 'providerAccountId'], {
   unique: true,
 })

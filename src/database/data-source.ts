@@ -8,9 +8,8 @@ import { validateEnv } from '../common/config/env.schema';
 /**
  * TypeORM configuration.
  *
- * `synchronize` is off everywhere, including development. A schema that a tool
- * can rewrite on boot is a schema nobody has reviewed, and the difference
- * between environments only shows up under load.
+ * Synchronization is opt-in through DATABASE_SYNCHRONIZE. The migration CLI
+ * always disables it so migrations execute against their expected schema.
  */
 export function buildDataSourceOptions(
   env = validateEnv(process.env),
@@ -24,7 +23,7 @@ export function buildDataSourceOptions(
     type: 'postgres',
     url: env.DATABASE_URL,
     ssl: env.DATABASE_SSL ? { rejectUnauthorized: false } : false,
-    synchronize: false,
+    synchronize: env.DATABASE_SYNCHRONIZE,
     logging: env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
     entities: [`${__dirname}/../modules/**/entities/*.entity.{ts,js}`],
     migrations: [`${__dirname}/migrations/*.{ts,js}`],
@@ -33,4 +32,4 @@ export function buildDataSourceOptions(
 }
 
 /** Used by the TypeORM CLI for migrations. */
-export default new DataSource(buildDataSourceOptions());
+export default new DataSource({ ...buildDataSourceOptions(), synchronize: false });

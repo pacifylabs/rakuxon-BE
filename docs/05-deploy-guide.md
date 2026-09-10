@@ -1,3 +1,9 @@
+# VPS deployment
+
+The current production deployment runbook is [ops/README.md](../ops/README.md). It uses one Docker Compose stack with all four frontend apps and the API.
+
+The guide below describes the former managed-host option and contains historical RLS/provisioning references; the current application removes RLS in migration `1757000400000` and applies tenant filters in services. Use the VPS runbook and actual migration code for setup.
+
 # Backend Deploy Guide — Railway / Render
 **Repo:** `rakuxon-BE`
 

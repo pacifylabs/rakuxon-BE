@@ -1,3 +1,4 @@
+import { ForeignKey } from 'typeorm';
 import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
 /**
@@ -7,6 +8,8 @@ import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn } from 
  * separate columns so an audit can tell "used" from "withdrawn".
  */
 @Entity('onboarding_links')
+@ForeignKey('tenants', ['tenantId'], ['id'], { name: 'onboarding_links_tenantId_fkey', onDelete: 'CASCADE' })
+@ForeignKey('users', ['issuedByUserId'], ['id'], { name: 'onboarding_links_issuedByUserId_fkey', onDelete: 'CASCADE' })
 @Index('onboarding_links_tenant_idx', ['tenantId'])
 export class OnboardingLink {
   @PrimaryGeneratedColumn('uuid')

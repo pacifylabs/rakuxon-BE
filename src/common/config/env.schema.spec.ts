@@ -1,4 +1,4 @@
-import { EnvValidationError, appUrlForRole, corsOrigins, validateEnv } from './env.schema';
+import { EnvValidationError, appUrlForRole, corsOrigins, smtpConfigured, validateEnv } from './env.schema';
 
 const valid = {
   NODE_ENV: 'test',
@@ -162,5 +162,30 @@ describe('appUrlForRole', () => {
     const bare = validateEnv(valid);
     expect(appUrlForRole(bare, 'agency_admin')).toBe('http://localhost:3000');
     expect(appUrlForRole(bare, 'platform_admin')).toBe('http://localhost:3000');
+  });
+});
+
+describe('smtpConfigured', () => {
+  it('is false when neither SMTP_HOST nor SMTP_FROM is set', () => {
+    expect(smtpConfigured(validateEnv(valid))).toBe(false);
+  });
+
+  it('is false with a host but no From address — a transport with nowhere to say mail is from', () => {
+    const env = validateEnv({ ...valid, SMTP_HOST: 'smtp.test' });
+    expect(smtpConfigured(env)).toBe(false);
+  });
+
+  it('is false with a From address but no host', () => {
+    const env = validateEnv({ ...valid, SMTP_FROM: 'Rakuxon <no-reply@rakuxon.com>' });
+    expect(smtpConfigured(env)).toBe(false);
+  });
+
+  it('is true once both are set', () => {
+    const env = validateEnv({
+      ...valid,
+      SMTP_HOST: 'smtp.test',
+      SMTP_FROM: 'Rakuxon <no-reply@rakuxon.com>',
+    });
+    expect(smtpConfigured(env)).toBe(true);
   });
 });

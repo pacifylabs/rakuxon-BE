@@ -22,10 +22,12 @@ import {
 import { AuthService } from './auth.service';
 import {
   AuthTokensDto,
+  ConfirmEmailVerificationDto,
   ConfirmPasswordResetDto,
   LoginDto,
   RefreshDto,
   RegisterAgencyDto,
+  RegisterStudentDto,
   RequestPasswordResetDto,
   SsoCallbackDto,
 } from './dto/auth.dto';
@@ -55,6 +57,20 @@ export class AuthController {
   @ApiConflictResponse({ description: 'The subdomain is already taken.' })
   async register(@Body() dto: RegisterAgencyDto): Promise<AuthTokensDto> {
     return this.auth.registerAgency(dto);
+  }
+
+  @Public()
+  @Post('register/student')
+  @ApiOperation({
+    summary: 'Register directly as a student, with no agency',
+    description:
+      'Creates the account under the shared house tenant and returns a session. For a ' +
+      "student joining through an agency's invitation, use POST /onboarding-links/register instead.",
+  })
+  @ApiCreatedResponse({ type: AuthTokensDto })
+  @ApiConflictResponse({ description: 'That email is already registered.' })
+  async registerStudent(@Body() dto: RegisterStudentDto): Promise<AuthTokensDto> {
+    return this.auth.registerDirectStudent(dto);
   }
 
   @Public()
@@ -126,6 +142,32 @@ export class AuthController {
   @ApiUnauthorizedResponse({ description: 'The link is unknown, expired or already used.' })
   async confirmPasswordReset(@Body() dto: ConfirmPasswordResetDto): Promise<void> {
     await this.auth.confirmPasswordReset(dto.token, dto.password);
+  }
+
+  @Post('verify-email/resend')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Re-send the verification link to the signed-in user',
+    description: 'A no-op if the address is already verified — never reports which.',
+  })
+  @ApiNoContentResponse()
+  @ApiUnauthorizedResponse({ description: 'Missing, invalid or expired bearer token.' })
+  async resendEmailVerification(@CurrentUser() user: AuthenticatedUser): Promise<void> {
+    await this.auth.resendEmailVerification(user);
+  }
+
+  @Public()
+  @Post('verify-email/confirm')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Confirm an email address from a verification link',
+    description: 'Single-use. Unlike a password reset, existing sessions are left alone.',
+  })
+  @ApiNoContentResponse()
+  @ApiUnauthorizedResponse({ description: 'The link is unknown, expired or already used.' })
+  async confirmEmailVerification(@Body() dto: ConfirmEmailVerificationDto): Promise<void> {
+    await this.auth.confirmEmailVerification(dto.token);
   }
 
   @Public()

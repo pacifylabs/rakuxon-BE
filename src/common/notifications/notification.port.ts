@@ -12,8 +12,15 @@ export interface PasswordResetMessage {
   expiresAt: Date;
 }
 
+export interface EmailVerificationMessage {
+  to: string;
+  verifyUrl: string;
+  expiresAt: Date;
+}
+
 export interface NotificationPort {
   sendPasswordReset(message: PasswordResetMessage): Promise<void>;
+  sendEmailVerification(message: EmailVerificationMessage): Promise<void>;
 }
 
 export const NOTIFICATION_PORT = Symbol('NOTIFICATION_PORT');

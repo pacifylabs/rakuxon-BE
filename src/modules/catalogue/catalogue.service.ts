@@ -4,13 +4,17 @@ import { Brackets, DataSource, Repository } from 'typeorm';
 
 import { PublishStatus } from '../../contract/enums';
 import { Article } from './entities/article.entity';
+import { Country } from './entities/country.entity';
+import { Course } from './entities/course.entity';
 import { Institution } from './entities/institution.entity';
 import type {
   CountryCountDto,
+  CountryDto,
   InstitutionListDto,
   InstitutionSummaryDto,
   ListInstitutionsQueryDto,
 } from './dto/institution.dto';
+import type { CourseListDto, CourseSummaryDto, ListCoursesQueryDto } from './dto/course.dto';
 import type {
   ArticleDetailDto,
   ArticleListDto,
@@ -38,8 +42,25 @@ export class CatalogueService {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     @InjectRepository(Institution) private readonly institutions: Repository<Institution>,
+    @InjectRepository(Course) private readonly courses: Repository<Course>,
     @InjectRepository(Article) private readonly articles: Repository<Article>,
+    @InjectRepository(Country) private readonly countryRepo: Repository<Country>,
   ) {}
+
+  /**
+   * The full reference list, for a profile or address form's dropdown — as
+   * opposed to `countries()`, which only lists destinations with a published
+   * university behind them.
+   */
+  async referenceCountries(): Promise<CountryDto[]> {
+    const rows = await this.countryRepo.find({ order: { name: 'ASC' } });
+    return rows.map((row) => ({
+      code: row.code,
+      name: row.name,
+      isDestination: row.isDestination,
+      flagEmoji: row.flagEmoji,
+    }));
+  }
 
   /**
    * The country menu.
@@ -115,6 +136,55 @@ export class CatalogueService {
 
     return {
       items: rows.map((row) => this.toSummary(row, counts.get(row.id) ?? 0)),
+      total,
+      page,
+      pageCount: Math.max(1, Math.ceil(total / limit)),
+    };
+  }
+
+  /**
+   * Published courses at published institutions, joined so a card can render
+   * without a second query per row.
+   */
+  async listCourses(query: ListCoursesQueryDto): Promise<CourseListDto> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 24;
+
+    const builder = this.courses
+      .createQueryBuilder('c')
+      .innerJoinAndSelect('c.institution', 'i')
+      .where('c.status = :status', { status: PublishStatus.Published })
+      .andWhere('i.status = :status', { status: PublishStatus.Published });
+
+    if (query.country) builder.andWhere('i.countryCode = :country', { country: query.country });
+    if (query.institutionSlug) {
+      builder.andWhere('i.slug = :slug', { slug: query.institutionSlug });
+    }
+    if (query.level) builder.andWhere('c.level = :level', { level: query.level });
+    if (query.discipline) {
+      builder.andWhere('EXISTS (SELECT 1 FROM unnest(c.disciplines) AS d WHERE d ILIKE :discTerm)', {
+        discTerm: `%${query.discipline}%`,
+      });
+    }
+
+    if (query.q?.trim()) {
+      const term = `%${query.q.trim()}%`;
+      builder.andWhere(
+        new Brackets((where) => {
+          where.where('c.title ILIKE :term', { term }).orWhere('i.name ILIKE :term', { term });
+        }),
+      );
+    }
+
+    builder
+      .orderBy('c.title', 'ASC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    const [rows, total] = await builder.getManyAndCount();
+
+    return {
+      items: rows.map((row) => this.toCourseSummary(row)),
       total,
       page,
       pageCount: Math.max(1, Math.ceil(total / limit)),
@@ -258,6 +328,27 @@ export class CatalogueService {
       logoUrl: row.logoUrl ?? undefined,
       fastTrackOffer: row.fastTrackOffer,
       courseCount,
+    };
+  }
+
+  private toCourseSummary(row: Course): CourseSummaryDto {
+    return {
+      id: row.id,
+      slug: row.slug,
+      title: row.title,
+      level: row.level,
+      studyMode: row.studyMode,
+      disciplines: row.disciplines,
+      durationMonths: row.durationMonths,
+      tuitionAmount: row.tuitionAmount ?? undefined,
+      tuitionCurrency: row.tuitionCurrency ?? undefined,
+      fastTrackOffer: row.fastTrackOffer,
+      intakes: row.intakes,
+      institutionId: row.institution!.id,
+      institutionName: row.institution!.name,
+      institutionSlug: row.institution!.slug,
+      country: row.institution!.country,
+      countryCode: row.institution!.countryCode,
     };
   }
 

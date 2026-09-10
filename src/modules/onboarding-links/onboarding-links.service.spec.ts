@@ -6,6 +6,7 @@ import { IsNull } from 'typeorm';
 import { ENV } from '../../common/config/config.module';
 import { OnboardingLink } from './entities/onboarding-link.entity';
 import { OnboardingLinksService } from './onboarding-links.service';
+import { Tenant } from '../tenants/entities/tenant.entity';
 
 /**
  * Tenant scoping used to be enforced by a row-level security policy. It was
@@ -20,6 +21,10 @@ describe('OnboardingLinksService', () => {
     update: jest.fn(),
   };
 
+  const tenantsRepo = {
+    findOne: jest.fn(),
+  };
+
   let service: OnboardingLinksService;
 
   beforeEach(async () => {
@@ -29,6 +34,7 @@ describe('OnboardingLinksService', () => {
       providers: [
         OnboardingLinksService,
         { provide: getRepositoryToken(OnboardingLink), useValue: repo },
+        { provide: getRepositoryToken(Tenant), useValue: tenantsRepo },
         { provide: ENV, useValue: { WEB_APP_URL: 'https://rakuxon.test' } },
       ],
     }).compile();
@@ -113,6 +119,8 @@ describe('OnboardingLinksService', () => {
       const [query] = repo.findOne.mock.calls[0] as [{ where: Record<string, unknown> }];
       expect(Object.keys(query.where)).toEqual(['tokenHash']);
       expect(result.tenantId).toBe('tenant-a');
+      // The link's own id travels with it, for `sourceOnboardingLinkId` provenance.
+      expect(result.id).toBe('link-1');
     });
 
     it('gives one message for expired, used and unknown alike', async () => {
@@ -129,6 +137,42 @@ describe('OnboardingLinksService', () => {
         // guesses were close.
         await expect(service.consume('t')).rejects.toThrow(UnauthorizedException);
       }
+    });
+  });
+
+  describe('peek', () => {
+    it('does not mark the link consumed', async () => {
+      repo.findOne.mockResolvedValue({
+        id: 'link-1',
+        tenantId: 'tenant-a',
+        inviteeEmail: 'a@b.test',
+        expiresAt: new Date(Date.now() + 86_400_000),
+      });
+      tenantsRepo.findOne.mockResolvedValue({ id: 'tenant-a', name: 'Northwind' });
+
+      await service.peek('a-token');
+
+      expect(repo.update).not.toHaveBeenCalled();
+    });
+
+    it('returns the issuing tenant name and the invitee email', async () => {
+      repo.findOne.mockResolvedValue({
+        id: 'link-1',
+        tenantId: 'tenant-a',
+        inviteeEmail: 'a@b.test',
+        expiresAt: new Date(Date.now() + 86_400_000),
+      });
+      tenantsRepo.findOne.mockResolvedValue({ id: 'tenant-a', name: 'Northwind' });
+
+      const result = await service.peek('a-token');
+
+      expect(result).toEqual({ tenantName: 'Northwind', inviteeEmail: 'a@b.test' });
+    });
+
+    it('rejects an invalid token the same way consume does', async () => {
+      repo.findOne.mockResolvedValue(null);
+
+      await expect(service.peek('bad-token')).rejects.toThrow(UnauthorizedException);
     });
   });
 });

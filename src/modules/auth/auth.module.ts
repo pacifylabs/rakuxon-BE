@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { EmailVerificationToken } from './entities/email-verification-token.entity';
 import { PasswordResetToken } from './entities/password-reset-token.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { SsoIdentity } from './entities/sso-identity.entity';
@@ -11,13 +12,22 @@ import { PasswordService } from './password.service';
 import { GoogleSsoProvider } from './sso/google-sso.provider';
 import { SSO_PROVIDERS } from './sso/sso.port';
 import { TokenService } from './token.service';
+import { Student } from '../students/entities/student.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
 import { User } from '../users/entities/user.entity';
 import type { SsoProvider } from './sso/sso.port';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Tenant, RefreshToken, PasswordResetToken, SsoIdentity]),
+    TypeOrmModule.forFeature([
+      User,
+      Tenant,
+      RefreshToken,
+      PasswordResetToken,
+      EmailVerificationToken,
+      SsoIdentity,
+      Student,
+    ]),
     JwtModule.register({}),
   ],
   controllers: [AuthController],
@@ -44,6 +54,8 @@ import type { SsoProvider } from './sso/sso.port';
       },
     },
   ],
-  exports: [TokenService, PasswordService],
+  /* AuthService is exported for OnboardingLinksController, which already
+     imports this module to redeem a link into a real account. */
+  exports: [TokenService, PasswordService, AuthService],
 })
 export class AuthModule {}

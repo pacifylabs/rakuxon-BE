@@ -20,7 +20,8 @@ describe('onboarding links', () => {
         agencyName: 'Northwind Education',
         slug,
         email: `admin@${slug}.example`,
-        fullName: 'Ada Lovelace',
+        firstName: 'Ada',
+        lastName: 'Lovelace',
         password: 'correct-horse-battery',
       })
       .expect(201);
@@ -39,7 +40,8 @@ describe('onboarding links', () => {
         agencyName: 'Temp',
         slug: uniqueSlug('temp'),
         email: `t-${email}`,
-        fullName: 'Temp',
+        firstName: 'Temp',
+        lastName: 'Counselor',
         password: 'correct-horse-battery',
       })
       .expect(201);
@@ -126,7 +128,13 @@ describe('onboarding links', () => {
         .send({ token })
         .expect(200);
 
-      expect(response.body).toEqual({ tenantId, inviteeEmail: 'student@example.com' });
+      // id travels with it now, for the account this link later creates to
+      // record its `sourceOnboardingLinkId` provenance.
+      expect(response.body).toEqual({
+        id: expect.any(String),
+        tenantId,
+        inviteeEmail: 'student@example.com',
+      });
     });
 
     it('refuses a second use of the same link', async () => {
@@ -176,6 +184,111 @@ describe('onboarding links', () => {
 
       // Otherwise a near-miss guess tells the holder they were close.
       expect(used.body.message).toBe(unknown.body.message);
+    });
+  });
+
+  describe('peeking', () => {
+    it('shows who the invitation is from without spending it', async () => {
+      const issued = await issue(adminToken).expect(201);
+      const token = issued.body.url.split('/invite/')[1];
+
+      const response = await request(app.getHttpServer())
+        .post('/v1/onboarding-links/peek')
+        .send({ token })
+        .expect(200);
+
+      expect(response.body).toEqual({
+        tenantName: 'Northwind Education',
+        inviteeEmail: 'student@example.com',
+      });
+
+      // Still redeemable afterwards — peeking must not have consumed it.
+      await request(app.getHttpServer())
+        .post('/v1/onboarding-links/consume')
+        .send({ token })
+        .expect(200);
+    });
+
+    it('refuses an unknown token, the same way consume does', async () => {
+      await request(app.getHttpServer())
+        .post('/v1/onboarding-links/peek')
+        .send({ token: 'never-existed' })
+        .expect(401);
+    });
+  });
+
+  describe('registering via a link', () => {
+    /** Each case issues its own link: registering spends both the token and the email. */
+    const uniqueEmail = () => `student-${Math.random().toString(36).slice(2, 8)}@example.com`;
+
+    it('creates a student account in the issuing tenant and returns a session', async () => {
+      const email = uniqueEmail();
+      const issued = await issue(adminToken, { inviteeEmail: email }).expect(201);
+      const token = issued.body.url.split('/invite/')[1];
+
+      const response = await request(app.getHttpServer())
+        .post('/v1/onboarding-links/register')
+        .send({ token, firstName: 'New', lastName: 'Student', password: 'correct-horse-battery' })
+        .expect(201);
+
+      expect(response.body).toMatchObject({
+        expiresIn: 900,
+        user: { role: 'student', firstName: 'New', lastName: 'Student', tenantId, email },
+      });
+      expect(typeof response.body.accessToken).toBe('string');
+    });
+
+    it('rejects a body that tries to set its own tenant or email', async () => {
+      const email = uniqueEmail();
+      const issued = await issue(adminToken, { inviteeEmail: email }).expect(201);
+      const token = issued.body.url.split('/invite/')[1];
+
+      // ValidationPipe is forbidNonWhitelisted: true — DTO fields the DTO
+      // does not declare 400 the whole request rather than being dropped, so
+      // there is no way to pass tenantId/email at all. The tenant and invitee
+      // email can only come from the token itself.
+      await request(app.getHttpServer())
+        .post('/v1/onboarding-links/register')
+        .send({
+          token,
+          firstName: 'New',
+          lastName: 'Student',
+          password: 'correct-horse-battery',
+          email: 'someone-else@example.com',
+          tenantId: '00000000-0000-0000-0000-000000000000',
+        })
+        .expect(400);
+
+      // The link is still valid — the bad request never reached consume().
+      const response = await request(app.getHttpServer())
+        .post('/v1/onboarding-links/register')
+        .send({ token, firstName: 'New', lastName: 'Student', password: 'correct-horse-battery' })
+        .expect(201);
+
+      expect(response.body.user.tenantId).toBe(tenantId);
+      expect(response.body.user.email).toBe(email);
+    });
+
+    it('spends the token, so it cannot be redeemed twice', async () => {
+      const issued = await issue(adminToken, { inviteeEmail: uniqueEmail() }).expect(201);
+      const token = issued.body.url.split('/invite/')[1];
+
+      await request(app.getHttpServer())
+        .post('/v1/onboarding-links/register')
+        .send({ token, firstName: 'New', lastName: 'Student', password: 'correct-horse-battery' })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post('/v1/onboarding-links/register')
+        .send({ token, firstName: 'Someone', lastName: 'Else', password: 'correct-horse-battery' })
+        .expect(401);
+    });
+
+    it('refuses an invalid token', async () => {
+      await request(app.getHttpServer())
+        .post('/v1/onboarding-links/register')
+        .send({ token: 'never-existed', firstName: 'New', lastName: 'Student', password: 'correct-horse-battery' })
+        .expect(401);
     });
   });
 });

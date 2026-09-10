@@ -1,5 +1,15 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import {
+  IsEmail,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
 
 export class IssueOnboardingLinkDto {
   @ApiProperty({ example: 'student@example.com', description: 'Who the invitation is for.' })
@@ -46,8 +56,49 @@ export class ConsumeOnboardingLinkDto {
 
 export class ConsumedLinkDto {
   @ApiProperty({ type: String, format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ type: String, format: 'uuid' })
   tenantId!: string;
 
   @ApiProperty({ example: 'student@example.com' })
   inviteeEmail!: string;
+}
+
+export class PeekOnboardingLinkDto {
+  @ApiProperty({ description: 'The token from the invitation link.' })
+  @IsString()
+  token!: string;
+}
+
+export class PeekedLinkDto {
+  @ApiProperty({ example: 'Northwind Education' })
+  tenantName!: string;
+
+  @ApiProperty({ example: 'student@example.com' })
+  inviteeEmail!: string;
+}
+
+export class RegisterViaOnboardingLinkDto {
+  @ApiProperty({ description: 'The token from the invitation link.' })
+  @IsString()
+  token!: string;
+
+  @ApiProperty({ example: 'Ada' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(60)
+  firstName!: string;
+
+  @ApiProperty({ example: 'Lovelace' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(60)
+  lastName!: string;
+
+  @ApiProperty({ example: 'correct-horse-battery', minLength: 8 })
+  @IsString()
+  @MinLength(8)
+  @MaxLength(256)
+  password!: string;
 }

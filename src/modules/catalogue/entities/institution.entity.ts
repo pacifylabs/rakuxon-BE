@@ -15,9 +15,27 @@ import type { Campus, EnglishTest, Faq, QualityRating, RequirementGroup } from '
  * which is the network asset the platform is built on.
  */
 @Entity('institutions')
+@Index('institutions_search_idx', { synchronize: false })
+@Index('institutions_name_trgm_idx', { synchronize: false })
+@Index('institutions_browse_idx', { synchronize: false })
+@Index('institutions_country_count_idx', { synchronize: false })
+@Index('institutions_enriched_idx', { synchronize: false })
+@Index('institutions_source_url_idx', { synchronize: false })
 @Index('institutions_country_idx', ['countryCode'])
 @Index('institutions_status_idx', ['status'])
 export class Institution {
+  /** Keep the migration's generated search column when entity sync is enabled. */
+  @Column({
+    type: 'tsvector',
+    asExpression: `setweight(to_tsvector('english'::regconfig, coalesce("name", '')), 'A') || setweight(to_tsvector('english'::regconfig, immutable_array_to_string("aka", ' ')), 'A') || setweight(to_tsvector('english'::regconfig, coalesce("city", '')), 'C') || setweight(to_tsvector('english'::regconfig, coalesce("country", '')), 'C')`,
+    generatedType: 'STORED',
+    select: false,
+    insert: false,
+    update: false,
+    nullable: true,
+  })
+  searchVector!: string;
+
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -142,7 +160,7 @@ export class Institution {
   @Column({ type: 'boolean', default: false })
   fastTrackOffer!: boolean;
 
-  @Column({ type: 'enum', enum: PublishStatus, default: PublishStatus.Draft })
+  @Column({ type: 'enum', enum: PublishStatus, enumName: 'publish_status_enum', default: PublishStatus.Draft })
   status!: PublishStatus;
 
   /**

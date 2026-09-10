@@ -14,7 +14,8 @@ describe('auth', () => {
         agencyName: 'Northwind Education',
         slug,
         email: `admin@${slug}.example`,
-        fullName: 'Ada Lovelace',
+        firstName: 'Ada',
+        lastName: 'Lovelace',
         password: 'correct-horse-battery',
         ...overrides,
       });
@@ -35,7 +36,7 @@ describe('auth', () => {
 
       expect(response.body).toMatchObject({
         expiresIn: 900,
-        user: { role: 'agency_admin', fullName: 'Ada Lovelace' },
+        user: { role: 'agency_admin', firstName: 'Ada', lastName: 'Lovelace' },
       });
       expect(typeof response.body.accessToken).toBe('string');
       expect(typeof response.body.refreshToken).toBe('string');
@@ -70,6 +71,50 @@ describe('auth', () => {
     it('rejects a body trying to set its own tenant', async () => {
       // docs/07-api-contract.md: tenancy is derived server-side, never sent.
       await register({ tenantId: '00000000-0000-0000-0000-000000000000' }).expect(400);
+    });
+  });
+
+  describe('POST /v1/auth/register/student', () => {
+    const registerStudent = (overrides: Record<string, unknown> = {}) =>
+      request(app.getHttpServer())
+        .post('/v1/auth/register/student')
+        .send({
+          email: `student-${Math.random().toString(36).slice(2, 8)}@example.com`,
+          firstName: 'Grace',
+          lastName: 'Hopper',
+          password: 'correct-horse-battery',
+          ...overrides,
+        });
+
+    it('creates the account in the house tenant and returns a session', async () => {
+      const response = await registerStudent().expect(201);
+
+      expect(response.body).toMatchObject({
+        expiresIn: 900,
+        user: {
+          role: 'student',
+          firstName: 'Grace',
+          lastName: 'Hopper',
+          tenantId: '00000000-0000-0000-0000-000000000001',
+        },
+      });
+      expect(typeof response.body.accessToken).toBe('string');
+    });
+
+    it('refuses an email that is already registered', async () => {
+      const email = `student-${Math.random().toString(36).slice(2, 8)}@example.com`;
+      await registerStudent({ email }).expect(201);
+      await registerStudent({ email }).expect(409);
+    });
+
+    it('refuses a password shorter than the policy', async () => {
+      await registerStudent({ password: 'short' }).expect(400);
+    });
+
+    it('rejects a body trying to choose its own tenant', async () => {
+      // docs/07-api-contract.md: tenancy is derived server-side, never sent.
+      // A direct signup always lands in the house tenant, regardless.
+      await registerStudent({ tenantId: '00000000-0000-0000-0000-000000000099' }).expect(400);
     });
   });
 

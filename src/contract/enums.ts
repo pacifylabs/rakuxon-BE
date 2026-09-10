@@ -66,3 +66,33 @@ export enum IntakeStatus {
   ClosingSoon = 'closing_soon',
   Closed = 'closed',
 }
+
+/* --------------------------------------------------------------- documents */
+
+export enum DocumentType {
+  AcademicCertificate = 'academic_certificate',
+  EnglishTest = 'english_test',
+  Identity = 'identity',
+  Medical = 'medical',
+  SecondaryMarksheet = 'secondary_marksheet',
+  SeniorSecondaryMarksheet = 'senior_secondary_marksheet',
+}
+
+export enum DocumentStatus {
+  PendingUpload = 'pending_upload',
+  Uploaded = 'uploaded',
+  Deleted = 'deleted',
+}
+
+/* ------------------------------------------------------------ applications */
+
+/**
+ * Stops at `submitted` deliberately. Everything past it (`under_review`,
+ * offers, rejection) belongs to the counselor/institution review pipeline —
+ * separate, later work — and extending this enum then is not a migration
+ * touching existing rows.
+ */
+export enum ApplicationStatus {
+  Draft = 'draft',
+  Submitted = 'submitted',
+}

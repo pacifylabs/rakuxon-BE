@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiConflictResponse,
   ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiNoContentResponse,
@@ -15,18 +16,26 @@ import {
   ConsumedLinkDto,
   IssueOnboardingLinkDto,
   OnboardingLinkDto,
+  PeekedLinkDto,
+  PeekOnboardingLinkDto,
+  RegisterViaOnboardingLinkDto,
 } from './dto/onboarding-link.dto';
 import { OnboardingLinksService } from './onboarding-links.service';
 import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { Public } from '../../common/auth/public.decorator';
 import { Roles } from '../../common/rbac/roles.decorator';
+import { AuthService } from '../auth/auth.service';
+import { AuthTokensDto } from '../auth/dto/auth.dto';
 import { Role } from '../../contract/enums';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-request';
 
 @ApiTags('onboarding-links')
 @Controller('onboarding-links')
 export class OnboardingLinksController {
-  constructor(private readonly links: OnboardingLinksService) {}
+  constructor(
+    private readonly links: OnboardingLinksService,
+    private readonly auth: AuthService,
+  ) {}
 
   @Post()
   @Roles(Role.AgencyAdmin, Role.Counselor)
@@ -64,6 +73,45 @@ export class OnboardingLinksController {
   @ApiUnauthorizedResponse({ description: 'The link is not valid.' })
   async consume(@Body() dto: ConsumeOnboardingLinkDto): Promise<ConsumedLinkDto> {
     return this.links.consume(dto.token);
+  }
+
+  @Public()
+  @Post('peek')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Look up an invitation without spending it',
+    description:
+      'Lets a sign-up form show who the invitation is from and prefill the invitee email, ' +
+      'before the student has set a password. Does not mark the link consumed.',
+  })
+  @ApiOkResponse({ type: PeekedLinkDto })
+  @ApiUnauthorizedResponse({ description: 'The link is not valid.' })
+  async peek(@Body() dto: PeekOnboardingLinkDto): Promise<PeekedLinkDto> {
+    return this.links.peek(dto.token);
+  }
+
+  @Public()
+  @Post('register')
+  @ApiOperation({
+    summary: 'Redeem an invitation and create the account in one step',
+    description:
+      'The tenant and email come from the token, not the request body, so a client cannot ' +
+      "choose which agency they join. Returns a session — no separate login step.",
+  })
+  @ApiCreatedResponse({ type: AuthTokensDto })
+  @ApiUnauthorizedResponse({ description: 'The link is not valid.' })
+  @ApiConflictResponse({ description: 'That email is already registered in this agency.' })
+  async register(@Body() dto: RegisterViaOnboardingLinkDto): Promise<AuthTokensDto> {
+    const { id, tenantId, inviteeEmail } = await this.links.consume(dto.token);
+
+    return this.auth.createStudentAccount({
+      tenantId,
+      email: inviteeEmail,
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+      password: dto.password,
+      sourceOnboardingLinkId: id,
+    });
   }
 
   @Delete(':id')

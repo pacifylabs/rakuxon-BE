@@ -1,10 +1,18 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
-import { ConflictException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
 
+import { EmailVerificationToken } from './entities/email-verification-token.entity';
 import { PasswordResetToken } from './entities/password-reset-token.entity';
 import { SsoIdentity } from './entities/sso-identity.entity';
+import type { AuthenticatedUser } from '../../common/auth/authenticated-request';
 import { PasswordService } from './password.service';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { TokenService } from './token.service';
@@ -13,8 +21,10 @@ import { appUrlForRole } from '../../common/config/env.schema';
 import type { Env } from '../../common/config/env.schema';
 import { NOTIFICATION_PORT } from '../../common/notifications/notification.port';
 import type { NotificationPort } from '../../common/notifications/notification.port';
+import { HOUSE_TENANT_ID } from '../../contract/constants';
 import { Role, TenantStatus, UserStatus } from '../../contract/enums';
 import type { SsoProfile } from './sso/sso.port';
+import { Student } from '../students/entities/student.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
 import { User } from '../users/entities/user.entity';
 import type { AuthTokensDto } from './dto/auth.dto';
@@ -23,8 +33,10 @@ import type { AuthTokensDto } from './dto/auth.dto';
 interface IdentityRepositories {
   users: Repository<User>;
   tenants: Repository<Tenant>;
+  students: Repository<Student>;
   refreshTokens: Repository<RefreshToken>;
   resetTokens: Repository<PasswordResetToken>;
+  verificationTokens: Repository<EmailVerificationToken>;
   ssoIdentities: Repository<SsoIdentity>;
   manager: EntityManager;
 }
@@ -44,6 +56,8 @@ interface IdentityRepositories {
  */
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     @Inject(NOTIFICATION_PORT) private readonly notifications: NotificationPort,
     @Inject(ENV) private readonly env: Env,
@@ -61,7 +75,8 @@ export class AuthService {
     agencyName: string;
     slug: string;
     email: string;
-    fullName: string;
+    firstName: string;
+    lastName: string;
     password: string;
   }): Promise<AuthTokensDto> {
     const slug = input.slug.toLowerCase();
@@ -89,7 +104,8 @@ export class AuthService {
         users.create({
           tenantId: tenant.id,
           email: input.email,
-          fullName: input.fullName,
+          firstName: input.firstName,
+          lastName: input.lastName,
           passwordHash,
           role: Role.AgencyAdmin,
           status: UserStatus.Active,
@@ -97,7 +113,69 @@ export class AuthService {
       );
     });
 
+    await this.sendVerificationEmailBestEffort(user);
+
     return this.issueTokens(user);
+  }
+
+  /**
+   * Creates a student's account: a `User(role: student)` plus its matching
+   * `Student` profile row, in one transaction. The single path both
+   * registration flows funnel into — direct signup passes the house tenant,
+   * an onboarding-link redemption passes whatever tenant issued the link —
+   * so "how a student account gets created" only exists in one place.
+   */
+  async createStudentAccount(input: {
+    tenantId: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    password: string;
+    sourceOnboardingLinkId?: string;
+  }): Promise<AuthTokensDto> {
+    const passwordHash = await this.passwords.hash(input.password);
+
+    const user = await this.inTransaction(async ({ users, students }) => {
+      if (await users.exist({ where: { tenantId: input.tenantId, email: input.email } })) {
+        throw new ConflictException('That email is already registered.');
+      }
+
+      const saved = await users.save(
+        users.create({
+          tenantId: input.tenantId,
+          email: input.email,
+          firstName: input.firstName,
+          lastName: input.lastName,
+          passwordHash,
+          role: Role.Student,
+          status: UserStatus.Active,
+        }),
+      );
+
+      await students.save(
+        students.create({
+          tenantId: input.tenantId,
+          userId: saved.id,
+          sourceOnboardingLinkId: input.sourceOnboardingLinkId ?? null,
+        }),
+      );
+
+      return saved;
+    });
+
+    await this.sendVerificationEmailBestEffort(user);
+
+    return this.issueTokens(user);
+  }
+
+  /** A student signing up directly, with no agency — scoped to the house tenant. */
+  async registerDirectStudent(input: {
+    email: string;
+    firstName: string;
+    lastName: string;
+    password: string;
+  }): Promise<AuthTokensDto> {
+    return this.createStudentAccount({ tenantId: HOUSE_TENANT_ID, ...input });
   }
 
   async login(email: string, password: string): Promise<AuthTokensDto> {
@@ -250,6 +328,68 @@ export class AuthService {
     });
   }
 
+  /**
+   * Issues a fresh verification link and emails it. Called right after
+   * registration, and by the resend endpoint for whoever lost the first one.
+   *
+   * Best-effort: a notification failure here must not fail registration —
+   * the account and its session are already real by the time this runs, so
+   * the worst outcome of a broken mail transport is an unverified address,
+   * not a lost account.
+   */
+  private async sendVerificationEmailBestEffort(user: User): Promise<void> {
+    try {
+      const token = randomBytes(32).toString('base64url');
+      /* A day, not an hour like a password reset: verifying an address is
+         not urgent the way recovering a compromised account is, and an
+         applicant reasonably checks their inbox on their own schedule. */
+      const expiresAt = new Date(Date.now() + 86_400_000);
+
+      await this.inTransaction(({ verificationTokens }) =>
+        verificationTokens.save(
+          verificationTokens.create({ userId: user.id, tokenHash: this.sha256(token), expiresAt }),
+        ),
+      );
+
+      await this.notifications.sendEmailVerification({
+        to: user.email,
+        verifyUrl: `${appUrlForRole(this.env, user.role)}/verify-email/${token}`,
+        expiresAt,
+      });
+    } catch (error) {
+      this.logger.warn(`Could not send verification email to ${user.email}: ${String(error)}`);
+    }
+  }
+
+  /** Re-sends a verification link to the signed-in user. A no-op if already verified. */
+  async resendEmailVerification(user: AuthenticatedUser): Promise<void> {
+    const found = await this.inTransaction(({ users }) => users.findOne({ where: { id: user.id } }));
+    if (!found || found.emailVerifiedAt) return;
+
+    await this.sendVerificationEmailBestEffort(found);
+  }
+
+  /**
+   * Completes verification.
+   *
+   * Unlike a password reset, this does not revoke sessions — confirming an
+   * address is not a credential change, so there is nothing here for an
+   * existing session to have been compromised by.
+   */
+  async confirmEmailVerification(token: string): Promise<void> {
+    await this.inTransaction(async ({ verificationTokens, manager }) => {
+      const grant = await verificationTokens.findOne({ where: { tokenHash: this.sha256(token) } });
+
+      const unusable = !grant || grant.consumedAt || grant.expiresAt.getTime() <= Date.now();
+      if (unusable) {
+        throw new UnauthorizedException('That verification link is not valid.');
+      }
+
+      await manager.update(User, grant.userId, { emailVerifiedAt: new Date() });
+      await manager.update(EmailVerificationToken, grant.id, { consumedAt: new Date() });
+    });
+  }
+
   /* ------------------------------------------------------------------- SSO */
 
   /**
@@ -319,8 +459,10 @@ export class AuthService {
       work({
         users: manager.getRepository(User),
         tenants: manager.getRepository(Tenant),
+        students: manager.getRepository(Student),
         refreshTokens: manager.getRepository(RefreshToken),
         resetTokens: manager.getRepository(PasswordResetToken),
+        verificationTokens: manager.getRepository(EmailVerificationToken),
         ssoIdentities: manager.getRepository(SsoIdentity),
         manager,
       }),
@@ -376,9 +518,11 @@ export class AuthService {
       user: {
         id: user.id,
         email: user.email,
-        fullName: user.fullName,
+        firstName: user.firstName,
+        lastName: user.lastName,
         role: user.role,
         tenantId: user.tenantId,
+        emailVerifiedAt: user.emailVerifiedAt?.toISOString() ?? null,
       },
     };
   }

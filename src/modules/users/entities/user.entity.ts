@@ -1,3 +1,4 @@
+import { ForeignKey } from 'typeorm';
 import {
   Column,
   CreateDateColumn,
@@ -17,6 +18,7 @@ import { Role, UserStatus } from '../../../contract/enums';
  * index would leak the existence of an account across tenants.
  */
 @Entity('users')
+@ForeignKey('tenants', ['tenantId'], ['id'], { name: 'users_tenantId_fkey', onDelete: 'CASCADE' })
 @Index('users_tenant_email_unique', ['tenantId', 'email'], { unique: true })
 export class User {
   @PrimaryGeneratedColumn('uuid')
@@ -34,13 +36,20 @@ export class User {
   passwordHash!: string | null;
 
   @Column({ type: 'text' })
-  fullName!: string;
+  firstName!: string;
 
-  @Column({ type: 'enum', enum: Role })
+  @Column({ type: 'text' })
+  lastName!: string;
+
+  @Column({ type: 'enum', enum: Role, enumName: 'user_role_enum' })
   role!: Role;
 
-  @Column({ type: 'enum', enum: UserStatus, default: UserStatus.Active })
+  @Column({ type: 'enum', enum: UserStatus, enumName: 'user_status_enum', default: UserStatus.Active })
   status!: UserStatus;
+
+  /** Null until the address is confirmed via a verification link. Not a sign-in gate. */
+  @Column({ type: 'timestamptz', nullable: true })
+  emailVerifiedAt!: Date | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;

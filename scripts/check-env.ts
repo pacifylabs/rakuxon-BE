@@ -81,6 +81,16 @@ function auditForProduction(): void {
     if (raw.DATABASE_SSL !== 'true') {
       warnings.push('DATABASE_SSL is not "true". Hosted Postgres almost always requires TLS.');
     }
+
+    if (!raw.SMTP_HOST || !raw.SMTP_FROM) {
+      /* Unlike Cloudinary or Google SSO, nothing else stands in for this in
+         production: password reset and email verification links are only
+         logged, never delivered, until both are set. */
+      warnings.push(
+        'SMTP_HOST/SMTP_FROM are not both set. Password reset and verification emails will ' +
+          'be logged instead of sent.',
+      );
+    }
   }
 }
 

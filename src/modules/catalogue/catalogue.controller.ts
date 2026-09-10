@@ -4,10 +4,12 @@ import { ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nest
 import { CatalogueService } from './catalogue.service';
 import {
   CountryCountDto,
+  CountryDto,
   InstitutionListDto,
   ListInstitutionsQueryDto,
 } from './dto/institution.dto';
 import { ArticleDetailDto, ArticleListDto, ListArticlesQueryDto } from './dto/article.dto';
+import { CourseListDto, ListCoursesQueryDto } from './dto/course.dto';
 import { SearchQueryDto, SearchResponseDto } from './dto/search.dto';
 import { Institution } from './entities/institution.entity';
 import { Public } from '../../common/auth/public.decorator';
@@ -51,6 +53,19 @@ export class CatalogueController {
     return this.catalogue.countries();
   }
 
+  /**
+   * The full reference list — every country, not just the ones with a
+   * published university. Feeds a profile or address form's dropdown, so a
+   * student's nationality isn't limited to where the catalogue operates.
+   */
+  @Public()
+  @Get('countries/reference')
+  @ApiOperation({ summary: 'Every country, for a form dropdown' })
+  @ApiOkResponse({ type: [CountryDto] })
+  referenceCountries(): Promise<CountryDto[]> {
+    return this.catalogue.referenceCountries();
+  }
+
   @Public()
   @Get('institutions')
   @ApiOperation({
@@ -73,6 +88,19 @@ export class CatalogueController {
   @ApiNotFoundResponse({ description: 'No published university with that slug.' })
   institution(@Param('slug') slug: string): Promise<Institution> {
     return this.catalogue.institutionBySlug(slug);
+  }
+
+  @Public()
+  @Get('courses')
+  @ApiOperation({
+    summary: 'Browse courses',
+    description:
+      'Filter by country, level, discipline, institution or free text. Only courses at ' +
+      'published institutions are returned.',
+  })
+  @ApiOkResponse({ type: CourseListDto })
+  listCourses(@Query() query: ListCoursesQueryDto): Promise<CourseListDto> {
+    return this.catalogue.listCourses(query);
   }
 
   @Public()

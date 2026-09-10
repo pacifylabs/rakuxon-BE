@@ -20,6 +20,7 @@ async function bootstrap(): Promise<void> {
      security produces no error, no warning and no visible symptom — every
      query simply returns every tenant's rows. */
 
+  app.enableShutdownHooks();
   app.use(helmet());
 
   /* Each frontend app is its own origin and sends its bearer token

@@ -5,9 +5,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 
 import { OnboardingLink } from './entities/onboarding-link.entity';
+import { Tenant } from '../tenants/entities/tenant.entity';
 import { ENV } from '../../common/config/config.module';
 import type { Env } from '../../common/config/env.schema';
-import type { ConsumedLinkDto, OnboardingLinkDto } from './dto/onboarding-link.dto';
+import type {
+  ConsumedLinkDto,
+  OnboardingLinkDto,
+  PeekedLinkDto,
+} from './dto/onboarding-link.dto';
 
 const DEFAULT_EXPIRY_DAYS = 14;
 
@@ -23,6 +28,7 @@ const DEFAULT_EXPIRY_DAYS = 14;
 export class OnboardingLinksService {
   constructor(
     @InjectRepository(OnboardingLink) private readonly links: Repository<OnboardingLink>,
+    @InjectRepository(Tenant) private readonly tenants: Repository<Tenant>,
     @Inject(ENV) private readonly env: Env,
   ) {}
 
@@ -62,6 +68,20 @@ export class OnboardingLinksService {
   }
 
   /**
+   * Looks up an invitation without spending it, so the sign-up form can show
+   * who it's from and prefill the invitee's email before a password exists.
+   *
+   * Same validity checks and the same generic rejection message as `consume`
+   * — a peek is just a consume that doesn't mark the token used.
+   */
+  async peek(token: string): Promise<PeekedLinkDto> {
+    const link = await this.findValid(token);
+    const tenant = await this.tenants.findOne({ where: { id: link.tenantId } });
+
+    return { tenantName: tenant?.name ?? 'your agency', inviteeEmail: link.inviteeEmail };
+  }
+
+  /**
    * Redeems an invitation, marking it used.
    *
    * Deliberately not tenant-scoped: the student has no account and no
@@ -74,18 +94,11 @@ export class OnboardingLinksService {
    * which guesses were close.
    */
   async consume(token: string): Promise<ConsumedLinkDto> {
-    const link = await this.links.findOne({ where: { tokenHash: this.hash(token) } });
-
-    const unusable =
-      !link || link.revokedAt || link.consumedAt || link.expiresAt.getTime() <= Date.now();
-
-    if (unusable) {
-      throw new UnauthorizedException('That invitation link is not valid.');
-    }
+    const link = await this.findValid(token);
 
     await this.links.update(link.id, { consumedAt: new Date() });
 
-    return { tenantId: link.tenantId, inviteeEmail: link.inviteeEmail };
+    return { id: link.id, tenantId: link.tenantId, inviteeEmail: link.inviteeEmail };
   }
 
   /**
@@ -101,6 +114,19 @@ export class OnboardingLinksService {
    */
   async revoke(id: string, tenantId: string): Promise<void> {
     await this.links.update({ id, tenantId, revokedAt: IsNull() }, { revokedAt: new Date() });
+  }
+
+  private async findValid(token: string): Promise<OnboardingLink> {
+    const link = await this.links.findOne({ where: { tokenHash: this.hash(token) } });
+
+    const unusable =
+      !link || link.revokedAt || link.consumedAt || link.expiresAt.getTime() <= Date.now();
+
+    if (unusable) {
+      throw new UnauthorizedException('That invitation link is not valid.');
+    }
+
+    return link;
   }
 
   private hash(token: string): string {

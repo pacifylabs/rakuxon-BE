@@ -55,6 +55,16 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
 
+      - name: Provision isolated test database role
+        env:
+          PGPASSWORD: rakuxon
+        run: |
+          psql -h localhost -p 5433 -U rakuxon -d rakuxon -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE rakuxon_app LOGIN PASSWORD 'rakuxon_app';
+          ALTER DATABASE rakuxon OWNER TO rakuxon_app;
+          ALTER SCHEMA public OWNER TO rakuxon_app;
+          SQL
+
       - name: Migrate
         run: pnpm migration:run
 
@@ -66,6 +76,11 @@ jobs:
 
       - name: End-to-end tests
         run: pnpm test:e2e
+
+      - name: End-to-end tests with schema synchronization
+        run: pnpm test:e2e
+        env:
+          DATABASE_SYNCHRONIZE: 'true'
 
       # docs/03-tdd-guide.md: red here means no merge, no exceptions. The
       # suite refuses to pass with no tests, so deleting it fails too.

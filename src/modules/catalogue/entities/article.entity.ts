@@ -11,9 +11,23 @@ import { PublishStatus } from '../../../contract/enums';
 
 /** Guidance content: country guides, visa explainers, how-to articles. */
 @Entity('articles')
+@Index('articles_tags_idx', { synchronize: false })
+@Index('articles_search_idx', { synchronize: false })
 @Index('articles_country_idx', ['countryCode'])
 @Index('articles_status_idx', ['status'])
 export class Article {
+  /** Keep the migration's generated search column when entity sync is enabled. */
+  @Column({
+    type: 'tsvector',
+    asExpression: `setweight(to_tsvector('english'::regconfig, coalesce("title", '')), 'A') || setweight(to_tsvector('english'::regconfig, coalesce("excerpt", '')), 'B') || setweight(to_tsvector('english'::regconfig, coalesce("body", '')), 'D')`,
+    generatedType: 'STORED',
+    select: false,
+    insert: false,
+    update: false,
+    nullable: true,
+  })
+  searchVector!: string;
+
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -52,7 +66,7 @@ export class Article {
   @Column({ type: 'timestamptz', nullable: true })
   publishedAt!: Date | null;
 
-  @Column({ type: 'enum', enum: PublishStatus, default: PublishStatus.Draft })
+  @Column({ type: 'enum', enum: PublishStatus, enumName: 'publish_status_enum', default: PublishStatus.Draft })
   status!: PublishStatus;
 
   @Column({ type: 'text', nullable: true })
