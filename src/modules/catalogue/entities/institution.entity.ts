@@ -97,6 +97,27 @@ export class Institution {
   @Column({ type: 'text', nullable: true })
   wikidataId!: string | null;
 
+  /** A couple of paragraphs from Wikipedia. CC BY-SA, hence the source URL. */
+  @Column({ type: 'text', nullable: true })
+  overview!: string | null;
+
+  /** Attribution. Required by the licence, so the text is unusable without it. */
+  @Column({ type: 'text', nullable: true })
+  overviewSourceUrl!: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  motto!: string | null;
+
+  /** Selective bodies only — Russell Group, not every standards consortium. */
+  @Column({ type: 'text', array: true, default: '{}' })
+  memberships!: string[];
+
+  @Column({ type: 'numeric', precision: 9, scale: 6, nullable: true })
+  latitude!: string | null;
+
+  @Column({ type: 'numeric', precision: 9, scale: 6, nullable: true })
+  longitude!: string | null;
+
   /** Null until enrichment has run, which is how a resumed run finds its work. */
   @Column({ type: 'timestamptz', nullable: true })
   enrichedAt!: Date | null;

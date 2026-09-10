@@ -130,7 +130,40 @@ export class CatalogueService {
        not something an anonymous visitor should be able to probe for. */
     if (!found) throw new NotFoundException('No such university.');
 
-    return found;
+    return { ...found, highlights: this.highlightsFor(found) };
+  }
+
+  /**
+   * The "Highlights" strip, derived rather than written.
+   *
+   * Every line is a fact already in the row, phrased. Nothing here is a claim
+   * we could not point at a source for — no "world-class facilities", no
+   * "vibrant student community", because we have no basis for either and a
+   * page full of them is how a catalogue stops being worth reading.
+   *
+   * Editor-written highlights win where they exist; this only fills the gap
+   * left by six thousand imported records that have none.
+   */
+  private highlightsFor(row: Institution): string[] {
+    if (row.highlights.length > 0) return row.highlights;
+
+    const lines: string[] = [];
+
+    for (const body of row.memberships) lines.push(`Member of the ${body}`);
+
+    if (row.foundedYear) {
+      const age = new Date().getFullYear() - row.foundedYear;
+      lines.push(`Founded in ${row.foundedYear}, teaching for over ${age} years`);
+    }
+
+    if (row.studentCount) {
+      lines.push(`Around ${row.studentCount.toLocaleString('en-GB')} students enrolled`);
+    }
+
+    if (row.city) lines.push(`Based in ${row.city}, ${row.country}`);
+    if (row.motto) lines.push(`Motto: “${row.motto}”`);
+
+    return lines;
   }
 
   /**

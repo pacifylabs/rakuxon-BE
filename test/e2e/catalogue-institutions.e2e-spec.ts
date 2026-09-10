@@ -35,6 +35,31 @@ describe('catalogue institutions', () => {
 
   const get = (path: string) => request(app.getHttpServer()).get(`/v1/catalogue${path}`);
 
+  describe('highlights', () => {
+    it('derives them from the row when an editor has written none', async () => {
+      // Six thousand imported records have no written highlights, and a strip
+      // of "world-class facilities" would be a claim with nothing behind it.
+      const { body } = await get('/institutions/probe-manchester').expect(200);
+
+      expect(body.highlights).toContain('Based in Manchester, United Kingdom');
+    });
+
+    it('leaves highlights an editor wrote alone', async () => {
+      await dataSource.query(
+        `UPDATE institutions SET highlights = '{"Ranked first for graduate pay"}' WHERE slug='probe-leeds'`,
+      );
+
+      try {
+        const { body } = await get('/institutions/probe-leeds').expect(200);
+        expect(body.highlights).toEqual(['Ranked first for graduate pay']);
+      } finally {
+        /* Restored even on failure: without this a failing assertion leaves
+           the fixture edited and the next test fails for the wrong reason. */
+        await dataSource.query(`UPDATE institutions SET highlights = '{}' WHERE slug='probe-leeds'`);
+      }
+    });
+  });
+
   describe('countries', () => {
     it('counts only published institutions', async () => {
       const { body } = await get('/countries').expect(200);
