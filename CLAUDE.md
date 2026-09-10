@@ -18,7 +18,7 @@ The frontend lives in a sibling repo, `../rakuxon-FE`. Deployed on Render at
 ```bash
 pnpm start:dev                  # watch mode, port 3001
 pnpm test                       # unit — src/ and scripts/
-pnpm test:e2e                   # e2e, needs a local Postgres (pnpm db:up)
+pnpm test:e2e                   # e2e, starts its own throwaway Postgres (no Docker)
 pnpm typecheck
 pnpm migration:run              # local; :run:prod is the compiled deploy path
 ```
@@ -113,7 +113,9 @@ import run.
 New behaviour ships with tests. A bug fix ships with a regression test that
 fails before the fix. Don't weaken a failing test to green the suite.
 
-E2E specs live in `test/e2e/` and need Postgres up (`pnpm db:up`). They share
+E2E specs live in `test/e2e/`. They start a throwaway Postgres 18 via
+`embedded-postgres` (test/helpers/global-setup.ts) and never use `.env`'s
+database, which is production. They share
 fixtures, so a test that mutates one must restore it in a `finally`.
 
 ## Git

@@ -56,8 +56,8 @@ function assertLocalDatabase(url: string): void {
   throw new Error(
     `Refusing to TRUNCATE: DATABASE_URL points at "${host || 'an unparseable host'}", ` +
       'which is not a local database. The test suite empties tables between files, so running ' +
-      'it against a hosted database would destroy real data. Point .env at docker-compose ' +
-      '(localhost:5433) before running tests.',
+      'it against a hosted database would destroy real data. The e2e suite starts its own ' +
+      'throwaway Postgres (test/helpers/global-setup.ts); TEST_DATABASE_URL, if set, must be local.',
   );
 }
 

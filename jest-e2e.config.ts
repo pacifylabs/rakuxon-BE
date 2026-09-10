@@ -8,6 +8,9 @@ const config: Config = {
   transform: { '^.+\\.ts$': ['ts-jest', { tsconfig: 'tsconfig.json' }] },
   testEnvironment: 'node',
   moduleNameMapper: { '^@/(.*)$': '<rootDir>/src/$1' },
+  /* A throwaway Postgres per run: no Docker, never the database in .env. */
+  globalSetup: '<rootDir>/test/helpers/global-setup.ts',
+  globalTeardown: '<rootDir>/test/helpers/global-teardown.ts',
   setupFiles: ['<rootDir>/test/helpers/load-test-env.ts'],
   setupFilesAfterEnv: ['<rootDir>/test/helpers/close-connections.ts'],
   testTimeout: 30_000,
