@@ -39,8 +39,41 @@ export const MAX_DB_ATTEMPTS = 5;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Everything an error carries that might name the failure.
+ *
+ * Reading `message` alone is not enough, and the gap is not theoretical: when
+ * Node tries every address a host resolves to and they all fail, it throws an
+ * AggregateError whose own message is the empty string and whose causes are in
+ * `errors[]`. Testing the empty message returns false, so the one helper
+ * written to survive a dropped connection classified a dropped connection as
+ * permanent and killed a six-thousand-row import at row 2,100.
+ */
+function* describe(error: unknown, depth = 0): Generator<string> {
+  if (depth > 4 || error === null || error === undefined) return;
+
+  if (typeof error !== 'object') {
+    yield String(error);
+    return;
+  }
+
+  const candidate = error as { message?: unknown; code?: unknown; errors?: unknown; cause?: unknown };
+
+  if (typeof candidate.message === 'string') yield candidate.message;
+  /* ECONNRESET and friends live on `code`, not in the message. */
+  if (typeof candidate.code === 'string') yield candidate.code;
+
+  if (Array.isArray(candidate.errors)) {
+    for (const nested of candidate.errors) yield* describe(nested, depth + 1);
+  }
+  if (candidate.cause) yield* describe(candidate.cause, depth + 1);
+}
+
 export function isTransientDbError(error: unknown): boolean {
-  return TRANSIENT.test(error instanceof Error ? error.message : String(error));
+  for (const text of describe(error)) {
+    if (TRANSIENT.test(text)) return true;
+  }
+  return false;
 }
 
 /**
