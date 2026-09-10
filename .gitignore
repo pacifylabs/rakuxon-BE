@@ -7,3 +7,6 @@ coverage/
 .env.*.local
 .DS_Store
 *.log
+
+# Fetched feed pages; re-derivable, and not ours to redistribute.
+scripts/.cache/

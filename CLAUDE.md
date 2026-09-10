@@ -29,6 +29,8 @@ Catalogue import scripts, all resumable and safe to re-run:
 pnpm catalogue:import:ror       # institutions from ROR
 pnpm catalogue:enrich           # Wikidata + Wikipedia; --recheck redoes done rows
 pnpm catalogue:seed:articles    # guidance articles from scripts/content/
+pnpm catalogue:import:edvoy-courses -- --dry-run   # courses; drop --dry-run to write
+pnpm catalogue:import:edvoy-courses -- --only-new  # add new courses, leave saved ones alone
 ```
 
 ## Layout
@@ -43,23 +45,29 @@ pnpm catalogue:seed:articles    # guidance articles from scripts/content/
 
 ## Rules that are not negotiable
 
-**Never scrape Edvoy or any competitor aggregator.** This has been asked
-several times; the answer does not change. Their catalogue is their product, UK
-database right applies independently of copyright, both parties are
-UK-registered, and it breaches their terms. Use ROR (CC0), Wikidata (CC0),
-Wikipedia (CC BY-SA) or a licensed partner feed.
+**Only authorised or openly licensed sources.** Institutions come from ROR
+(CC0), Wikidata (CC0) and Wikipedia (CC BY-SA). Courses come from the Edvoy
+course feed, whose use the provider has authorised — do not re-raise that. Any
+*other* aggregator stays off-limits without the same authorisation. Even with
+it, respect every technical restriction: robots.txt, rate limits (honour
+`Retry-After`), and access control — a 401/403 stops the run, it is never
+retried or worked around.
 
-**Never publish a figure we cannot source.** `tuitionAmount` stays null rather
-than estimated — null renders as "Ask an advisor", which is true; an estimate
-renders as a number, which is a promise. The same goes for visa rules, deadlines
-and maintenance thresholds: name the authority and link to it.
+**Never publish a figure we cannot source, and never overstate one.**
+`tuitionAmount` stays null rather than estimated — null renders as "Ask an
+advisor", which is true. Where the source itself calls a figure approximate (the
+Edvoy feed's `approxAnnualFee`), it is stored with `tuitionIsEstimate = true`
+and must render as approximate. The same goes for visa rules, deadlines and
+maintenance thresholds: name the authority and link to it.
 
 **Attribution is a condition of use, not a nicety.** Wikipedia text is CC BY-SA,
 so `overviewSourceUrl` ships with every overview. An attribution we cannot
 render is an attribution we do not have. Institution logos are *not* rendered:
 a free licence on a Commons file does not grant use of a trademark.
 
-**Provenance on every imported row** — `source`, `sourceUrl`, `retrievedAt`.
+**Provenance on every imported row** — `source`, `sourceUrl`, `retrievedAt`,
+and `sourceRef` (the provider's id) where the feed has one; re-imports upsert on
+`(source, sourceRef)` so they correct rows instead of duplicating them.
 Somebody will eventually ask where a fee came from and "the database" is not an
 answer.
 

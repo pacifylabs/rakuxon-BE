@@ -66,8 +66,9 @@ export class Course {
   @Column({ type: 'text', array: true, default: '{}' })
   disciplines!: string[];
 
-  @Column({ type: 'int' })
-  durationMonths!: number;
+  /** Null where the source does not state it; never estimated. */
+  @Column({ type: 'int', nullable: true })
+  durationMonths!: number | null;
 
   @Column({ type: 'enum', enum: StudyMode, enumName: 'study_mode_enum', default: StudyMode.FullTime })
   studyMode!: StudyMode;
@@ -85,6 +86,10 @@ export class Course {
   @Column({ type: 'enum', enum: TuitionPeriod, enumName: 'tuition_period_enum', default: TuitionPeriod.Year })
   tuitionPeriod!: TuitionPeriod;
 
+  /** The source calls its figure approximate, so the page must too. */
+  @Column({ type: 'boolean', default: false })
+  tuitionIsEstimate!: boolean;
+
   /** True where the figure is the international rate rather than the home one. */
   @Column({ type: 'boolean', default: true })
   tuitionIsInternational!: boolean;
@@ -101,8 +106,8 @@ export class Course {
   @Column({ type: 'jsonb', default: () => "'[]'" })
   scholarships!: Scholarship[];
 
-  @Column({ type: 'text' })
-  overview!: string;
+  @Column({ type: 'text', nullable: true })
+  overview!: string | null;
 
   @Column({ type: 'text', array: true, default: '{}' })
   highlights!: string[];
@@ -125,6 +130,10 @@ export class Course {
 
   @Column({ type: 'text', nullable: true })
   sourceUrl!: string | null;
+
+  /** The provider's own id for this row. Re-imports upsert on (source, sourceRef). */
+  @Column({ type: 'text', nullable: true })
+  sourceRef!: string | null;
 
   @Column({ type: 'timestamptz', nullable: true })
   retrievedAt!: Date | null;

@@ -1,6 +1,8 @@
 # Courses: how the data gets in
 
-Status: **plan only.** Nothing here is built. Institutions and articles are
+Status: **Stage 0 built (2026-09-10)** — the authorised Edvoy course feed,
+`pnpm catalogue:import:edvoy-courses`. Stages 1–3 below remain the plan for
+fees with a named source behind them. Institutions and articles are
 live; courses are the remaining gap on the university page, and this is the
 route in when it becomes the priority.
 
@@ -14,15 +16,18 @@ enrichment without a fuzzy name match anywhere. Courses have no equivalent.
 Every university publishes its own catalogue, in its own shape, and nobody
 aggregates them under a licence we can use.
 
-So course data cannot be *imported*. It has to be *collected*, per institution,
+Without an authorised aggregate feed, course data cannot be *imported*. It has
+to be *collected*, per institution,
 and that changes the economics: the cost is per university, not per catalogue.
 
 ## What is ruled out, and why
 
-**Scraping Edvoy or any competitor aggregator.** Their catalogue is their
-product. In the UK a compiled database attracts database right independently of
-copyright, both parties are UK-registered, and it is a term-of-service breach on
-top. This has been asked several times and the answer has not changed.
+**Any aggregator's catalogue without its owner's authorisation.** A compiled
+database is its owner's product; in the UK it attracts database right
+independently of copyright. Edvoy's course feed is used because the provider
+authorised it (Stage 0) — that authorisation is what makes it usable, and it
+does not extend to anyone else's. Even authorised, the importer honours
+robots.txt, rate limits and access control.
 
 **Scraping 6,422 university sites.** Not a legal problem so much as an
 unwinnable maintenance one: 6,422 bespoke parsers, each breaking on its own
@@ -31,6 +36,40 @@ financial decisions. A wrong tuition number on this site is worse than no
 number.
 
 ## The route in, in order
+
+### Stage 0 — the Edvoy course feed (authorised, built)
+
+About 40,450 courses, fetched one of our countries at a time through the site's
+own location filter — our 20 countries cover 40,453 of the feed's ~40,460.
+Measured against the live feed on 2026-09-10:
+
+- `offset` is a **page index**, not a row count: the server skips offset × limit
+  rows (offset=404&limit=100 returns exactly the last 61 of 40,461). Treating it
+  as a row count once read five scattered pages and misreported the empty sixth
+  as a paging limit.
+- `sortNumber=0` makes the order stable — 100/100 rows in place on a repeated
+  request, against 32/100 without it — so one pass is complete. Every country's
+  fetched count matched its reported total.
+- One Edvoy institution id can span countries (21 of 335, covering 3,922
+  courses; the University of Birmingham lists its Dubai campus under
+  Birmingham's id), so institutions are resolved per id *and* country.
+
+Institution matching runs in order: hand-checked alias (`INSTITUTION_ALIASES`),
+exact name, distinctive name, then create. Looser name overlap is only ever
+reported for review — measured, it paired UNSW with a psychiatry institute. `scripts/import-edvoy-courses.ts`
+fetches sequentially with a pause between requests and an identifying user
+agent, honours `Retry-After`, stops on 401/403, and caches pages locally so a
+failed write never re-asks the provider for the whole set. Rows are validated by
+`scripts/lib/edvoy-courses.ts` — unknown levels are rejected and counted, never
+guessed — and upserted on `(source, sourceRef)`.
+
+Institutions are matched to ours by normalised name *within the same country*;
+ambiguous matches are skipped and reported, and feed institutions we do not
+hold are created with `source = 'edvoy'`.
+
+The feed's figure is `approxAnnualFee`, so it is stored with
+`tuitionIsEstimate = true` and the page must say so. The feed carries no
+duration and usually no summary; both stay null rather than being invented.
 
 ### Stage 1 — partner feeds (the only source that scales honestly)
 
