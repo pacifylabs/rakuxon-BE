@@ -1,0 +1,37 @@
+name: Keep the API warm
+
+# Render's free tier stops the instance after fifteen minutes of no traffic and
+# takes tens of seconds to start it again. Warm, the catalogue endpoints answer
+# in about a second; cold, the first visitor after a quiet spell waits out the
+# boot and the site shows "the catalogue is unavailable right now" — which is
+# how /universities came to look broken while the API was fine.
+#
+# The client retries, but a retry cannot outrun a fifty-second boot. This stops
+# the boot happening. It is a workaround for the free tier, not a fix: on a
+# paid instance the service does not sleep and this file should be deleted.
+
+on:
+  schedule:
+    # Every ten minutes. GitHub does not run cron on time under load, so the
+    # margin against the fifteen-minute idle timeout is deliberate.
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+# Only one ping in flight; a delayed run should be dropped, not queued behind.
+concurrency:
+  group: keep-warm
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping health
+        run: |
+          # --max-time covers a cold start, since the point is to wait through
+          # one rather than give up and leave the instance asleep.
+          code=$(curl -sS --max-time 120 -o /dev/null -w '%{http_code}' \
+            https://rakuxon-be.onrender.com/v1/health)
+          echo "health responded $code"
+          [ "$code" = "200" ]
