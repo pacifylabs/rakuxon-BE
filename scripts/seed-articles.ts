@@ -4,7 +4,7 @@ import { DataSource } from 'typeorm';
 
 import { PublishStatus } from '../src/contract/enums';
 import { buildDataSourceOptions } from '../src/database/data-source';
-import { withReconnect } from './lib/resilient-db';
+import { connectWithRetry, withReconnect } from './lib/resilient-db';
 import { ARTICLES, AUTHOR } from './content/articles';
 import { Article } from '../src/modules/catalogue/entities/article.entity';
 
@@ -20,7 +20,7 @@ import { Article } from '../src/modules/catalogue/entities/article.entity';
 
 async function main(): Promise<void> {
   const dataSource = new DataSource(buildDataSourceOptions());
-  await dataSource.initialize();
+  await connectWithRetry(dataSource);
   const repo = dataSource.getRepository(Article);
 
   try {

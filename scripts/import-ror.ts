@@ -5,7 +5,7 @@ import { DataSource } from 'typeorm';
 import { PublishStatus } from '../src/contract/enums';
 import { buildDataSourceOptions } from '../src/database/data-source';
 import { Institution } from '../src/modules/catalogue/entities/institution.entity';
-import { withReconnect } from './lib/resilient-db';
+import { connectWithRetry, withReconnect } from './lib/resilient-db';
 
 /**
  * Imports institutions from the Research Organization Registry.
@@ -286,7 +286,7 @@ async function main(): Promise<void> {
   const countries = codes.length > 0 ? codes : [...DEFAULT_COUNTRIES];
 
   const dataSource = new DataSource(buildDataSourceOptions());
-  await dataSource.initialize();
+  await connectWithRetry(dataSource);
 
   try {
     let grandTotal = 0;

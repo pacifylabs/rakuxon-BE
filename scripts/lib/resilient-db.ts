@@ -100,3 +100,22 @@ export async function withReconnect<T>(
     return withReconnect(dataSource, work, attempt + 1);
   }
 }
+
+/**
+ * The first connection, retried like every one after it.
+ *
+ * `withReconnect` protects each query but the initial `initialize()` sat
+ * outside it, so a flaky first connect killed the run before it printed a
+ * single line — the one failure mode where the retry logic is present and
+ * unreachable.
+ */
+export async function connectWithRetry(dataSource: DataSource, attempt = 1): Promise<DataSource> {
+  try {
+    return await dataSource.initialize();
+  } catch (error) {
+    if (!isTransientDbError(error) || attempt >= MAX_DB_ATTEMPTS) throw error;
+
+    await sleep(1000 * 2 ** (attempt - 1));
+    return connectWithRetry(dataSource, attempt + 1);
+  }
+}

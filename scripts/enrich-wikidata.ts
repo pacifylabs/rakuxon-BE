@@ -3,7 +3,7 @@ import 'dotenv/config';
 import { DataSource, IsNull } from 'typeorm';
 
 import { buildDataSourceOptions } from '../src/database/data-source';
-import { withReconnect } from './lib/resilient-db';
+import { connectWithRetry, withReconnect } from './lib/resilient-db';
 import { Institution } from '../src/modules/catalogue/entities/institution.entity';
 
 /**
@@ -296,7 +296,7 @@ async function fetchOverviews(titles: readonly string[]): Promise<Map<string, st
 async function main(): Promise<void> {
   const recheck = process.argv.includes('--recheck');
   const dataSource = new DataSource(buildDataSourceOptions());
-  await dataSource.initialize();
+  await connectWithRetry(dataSource);
   const repo = dataSource.getRepository(Institution);
 
   try {
