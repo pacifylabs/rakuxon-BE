@@ -1,4 +1,27 @@
+import {
+  getDefaultAutoSelectFamilyAttemptTimeout,
+  setDefaultAutoSelectFamilyAttemptTimeout,
+} from 'node:net';
+
 import type { DataSource } from 'typeorm';
+
+/**
+ * Give each connection attempt time to finish before Node moves to the next
+ * address.
+ *
+ * Node races address families and abandons an attempt after 250ms by default.
+ * Measured from this office to Neon's us-east-2 pooler on 2026-09-10: plain TCP
+ * handshakes took 247–470ms (median 298), so the default abandoned most IPv4
+ * attempts and fell through to IPv6 addresses that do not route from this
+ * network. A slow connection became a failed one. Two seconds keeps the family
+ * race for machines where IPv6 does work, without cutting off a slow but
+ * healthy IPv4 link. Never lowered: a larger value set via NODE_OPTIONS stands.
+ */
+export const CONNECT_ATTEMPT_TIMEOUT_MS = 2000;
+
+if (getDefaultAutoSelectFamilyAttemptTimeout() < CONNECT_ATTEMPT_TIMEOUT_MS) {
+  setDefaultAutoSelectFamilyAttemptTimeout(CONNECT_ATTEMPT_TIMEOUT_MS);
+}
 
 /**
  * Database writes that survive a dropped connection.

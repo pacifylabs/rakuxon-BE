@@ -1,4 +1,6 @@
-import { isTransientDbError } from './resilient-db';
+import { getDefaultAutoSelectFamilyAttemptTimeout } from 'node:net';
+
+import { CONNECT_ATTEMPT_TIMEOUT_MS, isTransientDbError } from './resilient-db';
 
 /**
  * These exist because the helper had a hole exactly where it was supposed to
@@ -48,5 +50,13 @@ describe('isTransientDbError', () => {
     looping.cause = looping;
 
     expect(isTransientDbError(looping)).toBe(false);
+  });
+});
+
+describe('connection attempts', () => {
+  it('gives each address long enough for a slow but healthy link', () => {
+    // Node's default of 250ms abandoned most IPv4 attempts to Neon from here,
+    // where TCP handshakes measured 247–470ms, and the IPv6 fallback does not route.
+    expect(getDefaultAutoSelectFamilyAttemptTimeout()).toBeGreaterThanOrEqual(CONNECT_ATTEMPT_TIMEOUT_MS);
   });
 });
