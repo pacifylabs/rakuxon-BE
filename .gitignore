@@ -10,3 +10,7 @@ coverage/
 
 # Fetched feed pages; re-derivable, and not ours to redistribute.
 scripts/.cache/
+
+# Production credentials stay on the server.
+.env.*
+!.env.example

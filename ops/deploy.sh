@@ -23,7 +23,7 @@ source "$root/release.env"
 old_be=$BE_SHA; old_fe=$FE_SHA
 if [[ "$component" == backend ]]; then BE_SHA=$sha; services=(api); else FE_SHA=$sha; services=(site partner schools admin); fi
 export BE_SHA FE_SHA
-compose=(docker compose --env-file "$root/secrets/compose.env" -f ops/compose.yml)
+compose=(docker compose --env-file "$root/release.env" -f ops/compose.yml)
 # Build before disturbing running services; avoid concurrent builds on a shared VPS.
 for service in "${services[@]}"; do "${compose[@]}" build "$service"; done
 # Keep rollback images outside Docker's weekly unused-image cleanup.
@@ -45,9 +45,6 @@ rollback() {
 trap rollback ERR
 if [[ "$component" == backend ]]; then
   "${compose[@]}" run --rm --no-deps migrate
-  if grep -qx 'DATABASE_SYNCHRONIZE=true' "$root/secrets/api.env"; then
-    "${compose[@]}" exec -T db psql -U rakuxon_owner -d rakuxon -v ON_ERROR_STOP=1 < ops/postgres/enable-sync.sql
-  fi
 fi
 "${compose[@]}" up -d --no-build --wait --wait-timeout 180 "${services[@]}"
 "${compose[@]}" up -d --no-build --no-deps --force-recreate --wait --wait-timeout 60 gateway

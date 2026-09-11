@@ -1,94 +1,58 @@
 # Rakuxon VPS deployment
 
-Rakuxon runs as one Docker Compose project on `31.220.111.4`, with two source repositories. Frontend apps remain in the existing pnpm monorepo. Do not copy secrets into Git.
+Rakuxon follows the shared infrastructure convention used by Kudipot on `31.220.111.4`.
 
-| Public address | Service |
+| Address | Service |
 | --- | --- |
-| `https://rakuxon.com` | base-site |
-| `https://app.rakuxon.com` | partner-app |
-| `https://schools.rakuxon.com` | institution-portal |
-| `https://admin.rakuxon.com` | admin |
-| `/api/v1/*` on each origin | Nest API, internally `/v1/*` |
+| https://rakuxon.com | base-site, including student accounts |
+| https://app.rakuxon.com | partner-app |
+| https://schools.rakuxon.com | institution-portal |
+| https://admin.rakuxon.com | admin |
+| `/api/v1/*` on each origin | Nest API |
 
-The existing edge Nginx terminates TLS and forwards to `rakuxon_gateway:8080`. Only the gateway joins the shared `web` network. API and frontends use a separate project network with no published host ports. Postgres and Redis live on an additional internal data network that frontend containers cannot join; only the API and migration job can reach them. Server-rendered catalogue requests use `API_INTERNAL_URL=http://api:3001`; browser requests use `NEXT_PUBLIC_API_BASE_URL=/api`. `/api/catalogue` remains a Next.js route.
+## Configuration and database
 
-## Server layout
+- `/root/projects/rakuxon/backend/.env.production`: API and migration configuration, including the database URL and JWT secrets.
+- `/root/projects/rakuxon/frontend/.env.production`: frontend runtime configuration.
+- Both files are server-only, mode `0600`, ignored by Git and excluded from Docker builds. Only `.env.example` belongs in Git.
+- `/root/projects/rakuxon/release.env`: deployed commit IDs only; no credentials.
+- Shared container `postgres` hosts `rakuxon_db`, owned by the dedicated non-superuser `rakuxon_app`. No other application's database or credentials are used.
+- API and migration containers join the existing `web` network to reach shared Postgres. Frontends remain on the project network. No application ports are published on the host.
+- `REDIS_URL` points to shared Redis database 15. The current API does not use Redis; reserve that logical database for future Rakuxon usage and add application-specific key prefixes before adding caching or queues.
 
-- `/root/projects/rakuxon/backend`: this repository
-- `/root/projects/rakuxon/frontend`: `pacifylabs/rakuxon-FE`
-- `secrets/compose.env`: database initialization passwords, mode 0600
-- `secrets/api.env`: restricted runtime database connection and JWT secrets
-- `secrets/migration.env`: database owner connection, used only for migrations
-- `release.env`: deployed backend/frontend commit IDs
-- `previous-release.env`: preceding application release
-- `backups/`: custom-format database dumps and previous application images
+At the owner's request, `DATABASE_SYNCHRONIZE=true` remains enabled. The application database owner can alter its own schema. Synchronization can remove columns and data; switch to migration-only schema changes before retaining valuable production data. Application rollback does not reverse database changes.
 
-At the owner’s request, `DATABASE_SYNCHRONIZE=true` is temporarily enabled. The non-superuser application role owns the entity tables and has schema-creation privileges through `postgres/enable-sync.sql`. Automatic synchronization can alter or remove columns; every deployment takes a database backup, but application rollback cannot undo those schema changes. Set this flag to `false` and return to migration-only DDL before retaining valuable production data. Migrations run separately as the database owner and must succeed before deployment continues. The current application explicitly removed RLS in migration `1757000400000`; tenant filtering is application-level. Old RLS documentation is not the current contract.
+## Deployment
 
-## Deploy
+CI checks types, tests and builds. Successful CI on `main` triggers the deployment workflow through a restricted SSH key. Both repositories use `VPS_HOST`, `VPS_SSH_KEY`, `VPS_KNOWN_HOSTS`, the `production` environment and `VPS_DEPLOY_ENABLED=true`.
 
-CI runs type checks, tests, and builds. After successful CI on main, `.github/workflows/deploy.yml` sends the exact verified SHA over SSH. Both repos serialize deployments using the same server `flock`. Deployments build the affected services sequentially, archive old images, back up the database, migrate if needed, wait for container readiness, and check all four frontend/API routes. A failed activation restores previous application images. These are single-instance replacements with brief potential downtime, not a zero-downtime rollout.
-
-GitHub configuration for **both** repositories:
-
-- Secret `VPS_HOST`: `31.220.111.4`
-- Secret `VPS_SSH_KEY`: dedicated deployment private key (not your personal key)
-- Secret `VPS_KNOWN_HOSTS`: previously verified server host-key entry
-- Repository variable `VPS_DEPLOY_ENABLED`: `true`, only after initial deployment and secrets are ready
-- Environment `production`
-
-The deployment public key must use an `authorized_keys` forced command invoking `ops/ssh-dispatch.sh`, with `restrict`. It accepts only `frontend <40-character SHA>` or `backend <40-character SHA>`. It grants no interactive SSH session or port forwarding. Repository maintainers still control privileged deployment code and must be trusted.
-
-Manual deployment:
-
-```bash
-bash /root/projects/rakuxon/backend/ops/deploy.sh backend <verified-main-commit>
-bash /root/projects/rakuxon/backend/ops/deploy.sh frontend <verified-main-commit>
-```
-
-The script refuses dirty server checkouts and commits outside origin/main. Do not edit code directly on the VPS. The workflows pull Git over the server's existing GitHub SSH access; no personal GitHub token is stored in the app containers.
-
-## DNS and HTTPS cutover
-
-Before cutover, confirm whether existing production data must be migrated. The new database is initially empty. Never point users at it instead of an existing database without an agreed data migration.
-
-Cloudflare is authoritative for `rakuxon.com`. Set A records for `@`, `www`, `app`, `schools`, and `admin` to `31.220.111.4` (or CNAMEs to the apex for subdomains). Remove conflicting A/AAAA records for these names only. Preserve mail and other unrelated records. Issue a certificate after all five names resolve to this VPS; HTTP challenge routing is in `nginx/edge-http.conf`.
-
-```bash
-certbot certonly --webroot -w /var/www/certbot --cert-name rakuxon.com \
-  -d rakuxon.com -d www.rakuxon.com -d app.rakuxon.com \
-  -d schools.rakuxon.com -d admin.rakuxon.com
-```
-
-Then install `nginx/edge-https.conf` as `/root/docker/nginx/conf.d/rakuxon.conf`, validate with `docker exec nginx_proxy nginx -t`, and reload. On a validation failure restore the previous file before doing anything else. Confirm HTTPS certificate validity, all frontend routes, API health/database readiness, and authenticated tenant isolation. `www` redirects to the apex. Google SSO requires separately configured provider credentials and redirect URLs.
-
-The gateway trusts real-IP headers from the verified VPS `web` subnet `172.18.0.0/16`. Update this if the network is recreated with a different range. Auth rate limits are keyed to the client IP supplied by the edge. The edge trusts Cloudflare’s published proxy ranges for `CF-Connecting-IP`; DNS records remain proxied. Refresh those ranges when Cloudflare changes them. API Swagger is not published through the gateway.
-
-## Backups and rollback
-
-```bash
-bash /root/projects/rakuxon/backend/ops/backup.sh
-bash /root/projects/rakuxon/backend/ops/rollback.sh
-```
-
-Backups run daily through `rakuxon-backup.timer`, retain 14 days and are verified using `pg_restore --list`. A restore should also be periodically rehearsed against a separate database. These are **local backups**; an off-server destination and notification channel must be configured for disaster recovery. Do not represent local copies as protection against losing the VPS.
-
-Rollback archives preserve images despite the server's existing weekly `docker system prune -af`. Application rollback does not reverse database migrations; use backward-compatible migrations. Restoring a database backup is a separate operation requiring a maintenance window and an explicit decision about writes since that backup. Keep the secret files backed up securely too.
-
-## Verification and operating limits
+`ops/deploy.sh` serializes deployments, refuses dirty checkouts, verifies the commit belongs to `origin/main`, builds images, archives previous images, backs up the database, runs migrations, waits for health checks and verifies all four origins. Failed activation restores the previous application images. Single-instance replacement may briefly interrupt service.
 
 ```bash
 cd /root/projects/rakuxon/backend
-# Production status; avoid `config` without --quiet because it expands secrets.
-docker compose --env-file ../secrets/compose.env -f ops/compose.yml ps
+docker compose --env-file ../release.env -f ops/compose.yml ps
 bash ops/smoke.sh
-# Separate ephemeral database; never uses the production data volume.
-docker compose -f ops/compose.test.yml up --build --abort-on-container-exit --exit-code-from verify
-docker compose -f ops/compose.test.yml down
+bash ops/deploy.sh backend <verified-main-commit>
+bash ops/deploy.sh frontend <verified-main-commit>
 ```
 
-Node 24 and pnpm 10.33.0 build both apps. Next.js standalone output includes monorepo dependencies and static assets. Containers run as unprivileged users where supported, with no-new-privileges, dropped capabilities for application services, bounded logs, and memory limits. The API health check parses the dependency body because `/v1/health` itself always returns HTTP 200.
+Migrations use the same `.env.production` and dedicated database owner as the API. The shared Postgres service is managed separately, like Kudipot; it must be running before migrations or startup. Never run e2e tests against production: those tests truncate data.
 
-**Application limitations:** Student accounts, profiles and applications are part of the base site. SMTP must be configured for email verification and password resets; production tokens are never logged. Cloudinary uploads remain unconfigured pending private document storage and provider-side upload verification. Catalogue imports, Google SSO, offsite backups and external alerting also require configuration. Container readiness does not prove these integrations work.
+## HTTPS and backups
 
-References: [Next.js standalone output](https://nextjs.org/docs/15/app/api-reference/config/next-config-js/output), [Compose readiness](https://docs.docker.com/reference/cli/docker/compose/up/).
+Cloudflare website records point to the VPS. The shared edge Nginx terminates TLS and forwards to `rakuxon_gateway:8080`; `www` redirects to the apex. The edge trusts Cloudflare's published proxy ranges for client addresses. `/api/catalogue` remains a Next.js route and Swagger is not published by the gateway.
+
+The Let's Encrypt certificate covers all five names. Certbot renewal is scheduled, with a scoped Nginx validation/reload hook. Edge templates are in `ops/nginx/` and the active file is `/root/docker/nginx/conf.d/rakuxon.conf`.
+
+`rakuxon-backup.timer` runs daily. `ops/backup.sh` dumps only `rakuxon_db` from shared Postgres, verifies the archive and retains 14 days. Backups and rollback images live in `/root/projects/rakuxon/backups`.
+
+```bash
+bash ops/backup.sh
+bash ops/rollback.sh
+```
+
+Rollback restores application images, not schema or data. Backups are local; off-server backup storage remains to be configured. The retired dedicated database volume is retained as a cutover fallback, not used by the running API.
+
+## Integrations
+
+SMTP email delivery, private document uploads, catalogue imports and off-server backups require separate configuration. Never copy another project's service credentials into Rakuxon's environment as a shortcut.

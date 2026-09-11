@@ -11,8 +11,8 @@ x-runtime: &runtime
   stop_grace_period: 30s
 x-frontend: &frontend
   <<: *runtime
+  env_file: ../../frontend/.env.production
   environment:
-    API_INTERNAL_URL: http://api:3001
     PORT: "3000"
     HOSTNAME: 0.0.0.0
   healthcheck:
@@ -23,47 +23,13 @@ x-frontend: &frontend
     retries: 3
   mem_limit: 768m
 services:
-  db:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: rakuxon
-      POSTGRES_USER: rakuxon_owner
-      POSTGRES_PASSWORD: ${DB_OWNER_PASSWORD:?required}
-      DATABASE_APP_PASSWORD: ${DB_APP_PASSWORD:?required}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./postgres/init.sh:/docker-entrypoint-initdb.d/10-rakuxon.sh:ro
-    networks: [data]
-    healthcheck:
-      test: [CMD-SHELL, pg_isready -U rakuxon_owner -d rakuxon]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-    logging:
-      driver: json-file
-      options: {max-size: "10m", max-file: "3"}
-    mem_limit: 1g
-  redis:
-    <<: *runtime
-    image: redis:7-alpine
-    networks: [data]
-    cap_drop: []
-    command: [redis-server, --appendonly, "yes", --maxmemory, 128mb, --maxmemory-policy, noeviction]
-    volumes: [redis_data:/data]
-    healthcheck:
-      test: [CMD, redis-cli, ping]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    mem_limit: 256m
   migrate:
     <<: *runtime
     image: rakuxon-api:${BE_SHA:?required}
     restart: "no"
     profiles: [tools]
-    networks: [data]
-    env_file: /root/projects/rakuxon/secrets/migration.env
+    networks: [web]
+    env_file: ../.env.production
     command: [node, -r, reflect-metadata, ./node_modules/typeorm/cli.js, migration:run, -d, dist/database/data-source.js]
   api:
     <<: *runtime
@@ -71,15 +37,12 @@ services:
     build:
       context: ..
       target: runtime
-    networks: [private, data]
+    networks: [private, web]
     read_only: true
     tmpfs: [/tmp]
-    env_file: ${RAKUXON_ENV_FILE:-/root/projects/rakuxon/secrets/api.env}
+    env_file: ../.env.production
     environment:
       GIT_COMMIT_SHA: ${BE_SHA}
-    depends_on:
-      db: {condition: service_healthy}
-      redis: {condition: service_healthy}
     healthcheck:
       test: [CMD, node, -e, "fetch('http://127.0.0.1:3001/v1/health').then(r=>r.json()).then(b=>{if(b.status!=='ok'||b.dependencies.database!=='up')process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 15s
@@ -133,10 +96,5 @@ services:
     mem_limit: 128m
 networks:
   private: {}
-  data:
-    internal: true
   web:
     external: true
-volumes:
-  postgres_data:
-  redis_data:
