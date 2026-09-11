@@ -19,6 +19,8 @@ fi
 old_git=$(git -C "$repo" rev-parse HEAD)
 git -C "$repo" checkout --detach "$sha"
 cd "$root/backend"
+# Git checkout inherits umask 077; the unprivileged gateway must read this non-secret bind mount.
+chmod 644 ops/nginx/gateway.conf
 source "$root/release.env"
 old_be=$BE_SHA; old_fe=$FE_SHA
 if [[ "$component" == backend ]]; then BE_SHA=$sha; services=(api); else FE_SHA=$sha; services=(site partner schools admin); fi
@@ -37,6 +39,7 @@ rollback() {
   trap - ERR
   echo 'Deployment failed. Restoring the previous application images; database changes are not automatically reverted.' >&2
   git -C "$repo" checkout --detach "$old_git"
+  chmod 644 "$root/backend/ops/nginx/gateway.conf"
   export BE_SHA=$old_be FE_SHA=$old_fe
   "${compose[@]}" up -d --no-build --wait --wait-timeout 180 api site partner schools admin || true
   "${compose[@]}" up -d --no-build --no-deps --force-recreate --wait --wait-timeout 60 gateway || true

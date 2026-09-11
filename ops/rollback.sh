@@ -4,6 +4,7 @@ root=/root/projects/rakuxon
 exec 9>"$root/.deploy.lock"
 flock -w 1800 9
 cd "$root/backend"
+chmod 644 ops/nginx/gateway.conf
 source "$root/previous-release.env"
 export BE_SHA FE_SHA
 gzip -dc "$root/backups/rollback-images.tar.gz" | docker image load
