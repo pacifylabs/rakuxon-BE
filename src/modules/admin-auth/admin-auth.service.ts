@@ -1,9 +1,10 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import speakeasy from 'speakeasy';
 import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
 
-import { AdminAuthTokensDto } from './dto/admin-auth.dto';
+import { AdminAuthTokensDto, AdminLoginChallengeDto } from './dto/admin-auth.dto';
 import { AdminPasswordResetToken } from './entities/admin-password-reset-token.entity';
 import { AdminRefreshToken } from './entities/admin-refresh-token.entity';
 import { AdminTokenService } from './admin-token.service';
@@ -47,7 +48,7 @@ export class AdminAuthService {
     private readonly dataSource: DataSource,
   ) {}
 
-  async login(email: string, password: string): Promise<AdminAuthTokensDto> {
+  async login(email: string, password: string): Promise<AdminAuthTokensDto | AdminLoginChallengeDto> {
     /* passwordHash is select:false, so ask for it explicitly. */
     const admin = await this.inTransaction(({ admins }) =>
       admins
@@ -70,7 +71,57 @@ export class AdminAuthService {
       throw new UnauthorizedException('This account is not active.');
     }
 
+    if (admin.totpEnabled) {
+      return { requiresTotp: true, challengeToken: await this.tokens.signTotpChallenge(admin.id) };
+    }
+
     return this.issueTokens(admin);
+  }
+
+  /** Trades a password-verified challenge plus a TOTP or backup code for a real session. */
+  async verifyTotpLogin(challengeToken: string, code: string): Promise<AdminAuthTokensDto> {
+    let claims: { sub: string };
+    try {
+      claims = await this.tokens.verifyTotpChallenge(challengeToken);
+    } catch {
+      throw new UnauthorizedException('That verification session has expired. Please sign in again.');
+    }
+
+    const admin = await this.inTransaction(({ admins }) =>
+      admins
+        .createQueryBuilder('admin')
+        .addSelect(['admin.totpSecret', 'admin.totpBackupCodesHash'])
+        .where('admin.id = :id', { id: claims.sub })
+        .getOne(),
+    );
+
+    if (!admin || !admin.totpEnabled || !admin.totpSecret) {
+      throw new UnauthorizedException('That verification session is no longer valid.');
+    }
+    if (admin.status !== UserStatus.Active) {
+      throw new UnauthorizedException('This account is not active.');
+    }
+
+    const valid = speakeasy.totp.verify({ secret: admin.totpSecret, encoding: 'base32', token: code.trim(), window: 1 });
+    if (valid) {
+      return this.issueTokens(admin);
+    }
+
+    /* Not a TOTP code — try it as a one-time backup code instead. A match
+       consumes it immediately, same guarantee a password-reset token gives:
+       used once, never again. */
+    const codeHash = this.sha256(code.trim());
+    const consumed = await this.inTransaction(({ manager }) =>
+      manager.query(
+        `UPDATE "admins" SET "totpBackupCodesHash" = array_remove("totpBackupCodesHash", $1)
+         WHERE "id" = $2 AND "totpEnabled" = true AND "status" = $3
+           AND $1 = ANY("totpBackupCodesHash") RETURNING "id"`,
+        [codeHash, admin.id, UserStatus.Active],
+      ),
+    );
+    if (consumed[0].length === 1) return this.issueTokens(admin);
+
+    throw new UnauthorizedException('That code is not valid.');
   }
 
   /** Rotates a refresh token. Same replay defence as AuthService.refresh. */

@@ -30,6 +30,17 @@ export class Admin {
   @Column({ type: 'enum', enum: UserStatus, enumName: 'user_status_enum', default: UserStatus.Active })
   status!: UserStatus;
 
+  /** Base32 TOTP secret. Set by `setupTotp`, cleared on disable — never selected by default. */
+  @Column({ type: 'text', nullable: true, select: false })
+  totpSecret!: string | null;
+
+  @Column({ type: 'boolean', default: false })
+  totpEnabled!: boolean;
+
+  /** SHA-256 hashes of unused one-time backup codes — never the codes themselves. */
+  @Column({ type: 'text', array: true, default: () => "'{}'", select: false })
+  totpBackupCodesHash!: string[];
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;
 

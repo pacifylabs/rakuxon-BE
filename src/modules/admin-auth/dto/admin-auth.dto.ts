@@ -53,6 +53,31 @@ export class AdminAuthTokensDto {
   admin!: AdminSessionDto;
 }
 
+/**
+ * Returned by `/admin-auth/login` instead of `AdminAuthTokensDto` when the
+ * account has 2FA on — the password checked out, but the session is not
+ * issued until `/admin-auth/login/verify-totp` also succeeds.
+ */
+export class AdminLoginChallengeDto {
+  @ApiProperty({ enum: [true] })
+  requiresTotp!: true;
+
+  @ApiProperty({ description: 'Trade this, plus a TOTP or backup code, for a real session. Expires in 5 minutes.' })
+  challengeToken!: string;
+}
+
+export class VerifyAdminTotpLoginDto {
+  @ApiProperty({ description: 'From the `requiresTotp` login response.' })
+  @IsString()
+  @IsNotEmpty()
+  challengeToken!: string;
+
+  @ApiProperty({ example: '123456', description: 'A 6-digit authenticator code, or an unused backup code.' })
+  @IsString()
+  @IsNotEmpty()
+  code!: string;
+}
+
 export class RequestAdminPasswordResetDto {
   @ApiProperty({ example: 'ada@rakuxon.com' })
   @IsEmail()

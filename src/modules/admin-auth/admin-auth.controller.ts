@@ -1,19 +1,23 @@
 import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import {
+  ApiExtraModels,
   ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
   ApiUnauthorizedResponse,
+  getSchemaPath,
 } from '@nestjs/swagger';
 
 import { AdminAuthService } from './admin-auth.service';
 import {
   AdminAuthTokensDto,
+  AdminLoginChallengeDto,
   AdminLoginDto,
   AdminRefreshDto,
   ConfirmAdminPasswordResetDto,
   RequestAdminPasswordResetDto,
+  VerifyAdminTotpLoginDto,
 } from './dto/admin-auth.dto';
 import { Public } from '../../common/auth/public.decorator';
 
@@ -25,6 +29,7 @@ import { Public } from '../../common/auth/public.decorator';
  */
 @ApiTags('admin-auth')
 @Controller('admin-auth')
+@ApiExtraModels(AdminAuthTokensDto, AdminLoginChallengeDto)
 export class AdminAuthController {
   constructor(private readonly adminAuth: AdminAuthService) {}
 
@@ -35,12 +40,27 @@ export class AdminAuthController {
     summary: 'Exchange admin credentials for a token pair',
     description:
       'Returns the same message whether the address is unknown or the password is wrong, so ' +
-      'the response cannot be used to discover which addresses are registered.',
+      'the response cannot be used to discover which addresses are registered. When the account ' +
+      'has 2FA on, this returns `{ requiresTotp: true, challengeToken }` instead of tokens — ' +
+      'call `/admin-auth/login/verify-totp` next.',
+  })
+  @ApiOkResponse({ schema: { oneOf: [{ $ref: getSchemaPath(AdminAuthTokensDto) }, { $ref: getSchemaPath(AdminLoginChallengeDto) }] } })
+  @ApiUnauthorizedResponse({ description: 'Credentials are not valid, or the account is inactive.' })
+  async login(@Body() dto: AdminLoginDto): Promise<AdminAuthTokensDto | AdminLoginChallengeDto> {
+    return this.adminAuth.login(dto.email, dto.password);
+  }
+
+  @Public()
+  @Post('login/verify-totp')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Finish a 2FA login',
+    description: 'Trades the challenge token from `/admin-auth/login` plus a TOTP or backup code for a real session.',
   })
   @ApiOkResponse({ type: AdminAuthTokensDto })
-  @ApiUnauthorizedResponse({ description: 'Credentials are not valid, or the account is inactive.' })
-  async login(@Body() dto: AdminLoginDto): Promise<AdminAuthTokensDto> {
-    return this.adminAuth.login(dto.email, dto.password);
+  @ApiUnauthorizedResponse({ description: 'The challenge has expired, or the code is not valid.' })
+  async verifyTotpLogin(@Body() dto: VerifyAdminTotpLoginDto): Promise<AdminAuthTokensDto> {
+    return this.adminAuth.verifyTotpLogin(dto.challengeToken, dto.code);
   }
 
   @Public()
