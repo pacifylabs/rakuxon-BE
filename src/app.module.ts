@@ -17,6 +17,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { CatalogueModule } from './modules/catalogue/catalogue.module';
 import { AdminDashboardModule } from './modules/dashboard/admin-dashboard.module';
 import { DocumentsModule } from './modules/documents/documents.module';
+import { NotificationsInboxModule } from './modules/notifications-inbox/notifications-inbox.module';
 import { OnboardingLinksModule } from './modules/onboarding-links/onboarding-links.module';
 import { StudentsModule } from './modules/students/students.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
@@ -31,6 +32,7 @@ import { TenantsModule } from './modules/tenants/tenants.module';
     CatalogueModule,
     OnboardingLinksModule,
     StudentsModule,
+    NotificationsInboxModule,
     DocumentsModule,
     ApplicationsModule,
     AdminAuthModule,

@@ -2,11 +2,13 @@ import { Inject, Injectable } from '@nestjs/common';
 
 import { ENV } from '../config/config.module';
 import type { Env } from '../config/env.schema';
+import { documentRejectedEmail } from './templates/document-rejected.template';
 import { emailVerificationEmail } from './templates/email-verification.template';
 import { passwordResetEmail } from './templates/password-reset.template';
 import { MAIL_TRANSPORT } from './mail-transport';
 import type { MailTransport } from './mail-transport';
 import type {
+  DocumentRejectedMessage,
   EmailVerificationMessage,
   NotificationPort,
   PasswordResetMessage,
@@ -33,6 +35,11 @@ export class SmtpNotificationAdapter implements NotificationPort {
 
   async sendEmailVerification(message: EmailVerificationMessage): Promise<void> {
     const { subject, html, text } = emailVerificationEmail(message);
+    await this.send(message.to, subject, html, text);
+  }
+
+  async sendDocumentRejected(message: DocumentRejectedMessage): Promise<void> {
+    const { subject, html, text } = documentRejectedEmail(message);
     await this.send(message.to, subject, html, text);
   }
 

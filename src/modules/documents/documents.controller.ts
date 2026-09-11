@@ -72,6 +72,7 @@ export class DocumentsController {
       url: document.url,
       bytes: document.bytes,
       mimeType: document.mimeType,
+      rejectionReason: document.rejectionReason,
       createdAt: document.createdAt.toISOString(),
     };
   }

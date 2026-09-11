@@ -4,6 +4,7 @@ import { ENV } from '../config/config.module';
 import type { Env } from '../config/env.schema';
 
 import type {
+  DocumentRejectedMessage,
   EmailVerificationMessage,
   NotificationPort,
   PasswordResetMessage,
@@ -43,6 +44,18 @@ export class LoggingNotificationAdapter implements NotificationPort {
     }
     this.logger.log(
       `Email verification for ${message.to} — ${message.verifyUrl} (expires ${message.expiresAt.toISOString()})`,
+    );
+  }
+
+  async sendDocumentRejected(message: DocumentRejectedMessage): Promise<void> {
+    if (this.env.NODE_ENV === 'production') {
+      this.logger.warn(
+        'Document-rejected email was not sent: production email transport is not configured.',
+      );
+      return;
+    }
+    this.logger.log(
+      `Document rejected for ${message.to} — ${message.documentType}: ${message.reason} (${message.reviewUrl})`,
     );
   }
 }

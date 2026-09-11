@@ -68,15 +68,16 @@ export async function truncateAll(): Promise<void> {
   const admin = await adminDataSource();
   await admin.query(
     'TRUNCATE TABLE "password_reset_tokens", "sso_identities", "onboarding_links", ' +
-      /* "students", "documents", "applications" and "application_documents"
-         are FK-cascaded from "users"/"tenants" and would empty either way;
-         listed explicitly so none is missed if that changes. Same story for
-         "admin_refresh_tokens", "admin_password_reset_tokens" and
-         "admin_permissions", cascaded from "admins" — "permissions" itself is
-         NOT here: it's static catalogue data seeded once by migration, the
-         same way an enum type is never truncated. */
+      /* "students", "documents", "applications", "application_documents" and
+         "notifications" are FK-cascaded from "users"/"tenants" and would
+         empty either way; listed explicitly so none is missed if that
+         changes. Same story for "admin_refresh_tokens",
+         "admin_password_reset_tokens" and "admin_permissions", cascaded
+         from "admins" — "permissions" itself is NOT here: it's static
+         catalogue data seeded once by migration, the same way an enum type
+         is never truncated. */
       '"refresh_tokens", "users", "students", "documents", "applications", ' +
-      '"application_documents", "tenants", "admins", "admin_refresh_tokens", ' +
+      '"application_documents", "notifications", "tenants", "admins", "admin_refresh_tokens", ' +
       '"admin_password_reset_tokens", "admin_permissions" CASCADE',
   );
 

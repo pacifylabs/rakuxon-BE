@@ -32,4 +32,19 @@ describe('LoggingNotificationAdapter', () => {
     expect(warn).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(warn.mock.calls)).not.toMatch(/secret-token|person@example.com/);
   });
+
+  it('never writes a rejection reason or recipient address to production logs', async () => {
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const adapter = new LoggingNotificationAdapter({ NODE_ENV: 'production' } as Env);
+    await adapter.sendDocumentRejected({
+      to: 'person@example.com',
+      documentType: 'identity',
+      reason: 'The scan is illegible',
+      reviewUrl: 'https://app.rakuxon.com/dashboard/documents',
+    });
+    expect(log).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(warn.mock.calls)).not.toMatch(/illegible|person@example.com/);
+  });
 });

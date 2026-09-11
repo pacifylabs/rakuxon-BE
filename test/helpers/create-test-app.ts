@@ -5,6 +5,7 @@ import { adminDataSource, truncateAll } from './admin-data-source';
 import { NOTIFICATION_PORT } from '../../src/common/notifications/notification.port';
 import { AppModule } from '../../src/app.module';
 import type {
+  DocumentRejectedMessage,
   EmailVerificationMessage,
   NotificationPort,
   PasswordResetMessage,
@@ -20,6 +21,7 @@ import type {
 export class CapturingNotifications implements NotificationPort {
   readonly passwordResets: PasswordResetMessage[] = [];
   readonly emailVerifications: EmailVerificationMessage[] = [];
+  readonly documentRejections: DocumentRejectedMessage[] = [];
 
   async sendPasswordReset(message: PasswordResetMessage): Promise<void> {
     this.passwordResets.push(message);
@@ -27,6 +29,10 @@ export class CapturingNotifications implements NotificationPort {
 
   async sendEmailVerification(message: EmailVerificationMessage): Promise<void> {
     this.emailVerifications.push(message);
+  }
+
+  async sendDocumentRejected(message: DocumentRejectedMessage): Promise<void> {
+    this.documentRejections.push(message);
   }
 
   /** The token out of the most recent reset link for an address. */

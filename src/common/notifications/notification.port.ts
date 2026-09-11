@@ -18,9 +18,17 @@ export interface EmailVerificationMessage {
   expiresAt: Date;
 }
 
+export interface DocumentRejectedMessage {
+  to: string;
+  documentType: string;
+  reason: string;
+  reviewUrl: string;
+}
+
 export interface NotificationPort {
   sendPasswordReset(message: PasswordResetMessage): Promise<void>;
   sendEmailVerification(message: EmailVerificationMessage): Promise<void>;
+  sendDocumentRejected(message: DocumentRejectedMessage): Promise<void>;
 }
 
 export const NOTIFICATION_PORT = Symbol('NOTIFICATION_PORT');

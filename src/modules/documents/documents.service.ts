@@ -1,23 +1,31 @@
 import { randomUUID } from 'node:crypto';
 
-import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { v2 as cloudinary } from 'cloudinary';
 import { In, Repository } from 'typeorm';
 
 import type { ConfirmDocumentUploadDto, UploadSignatureDto, UploadSignatureRequestDto } from './dto/document.dto';
 import { Document } from './entities/document.entity';
+import { appUrlForRole } from '../../common/config/env.schema';
 import { ENV } from '../../common/config/config.module';
-import { DocumentStatus } from '../../contract/enums';
+import { NOTIFICATION_PORT } from '../../common/notifications/notification.port';
+import type { NotificationPort } from '../../common/notifications/notification.port';
+import { DocumentStatus, Role } from '../../contract/enums';
+import { NotificationsInboxService } from '../notifications-inbox/notifications-inbox.service';
 import { StudentsService } from '../students/students.service';
 import type { Env } from '../../common/config/env.schema';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-request';
 
 @Injectable()
 export class DocumentsService {
+  private readonly logger = new Logger('Notifications');
+
   constructor(
     @InjectRepository(Document) private readonly documents: Repository<Document>,
     private readonly students: StudentsService,
+    private readonly inbox: NotificationsInboxService,
+    @Inject(NOTIFICATION_PORT) private readonly notifications: NotificationPort,
     @Inject(ENV) private readonly env: Env,
   ) {}
 
@@ -25,8 +33,28 @@ export class DocumentsService {
     user: AuthenticatedUser,
     dto: UploadSignatureRequestDto,
   ): Promise<UploadSignatureDto> {
-    const { cloudName, apiKey, apiSecret } = this.credentials();
     const student = await this.students.getOwnProfile(user);
+    return this.issueSignature({ id: student.id, tenantId: student.tenantId }, dto);
+  }
+
+  /**
+   * Same as `createUploadSignature`, minus the self-lookup — an admin issues
+   * this for a student who cannot upload it themselves. The controller's
+   * `documents.review` permission is the gate, not an ownership check.
+   */
+  async createUploadSignatureForStudent(
+    studentId: string,
+    dto: UploadSignatureRequestDto,
+  ): Promise<UploadSignatureDto> {
+    const student = await this.students.getAdminDetail(studentId);
+    return this.issueSignature({ id: student.id, tenantId: student.tenantId }, dto);
+  }
+
+  private async issueSignature(
+    student: { id: string; tenantId: string },
+    dto: UploadSignatureRequestDto,
+  ): Promise<UploadSignatureDto> {
+    const { cloudName, apiKey, apiSecret } = this.credentials();
 
     /* Namespaced by tenant and student, never guessable — the id alone
        would let one student's upload collide with or overwrite another's if
@@ -67,7 +95,17 @@ export class DocumentsService {
     dto: ConfirmDocumentUploadDto,
   ): Promise<Document> {
     const document = await this.getOwnDocument(user, documentId);
+    return this.applyConfirm(document, dto);
+  }
 
+  /** Same as `confirmUpload`, minus the ownership check — the caller is already permission-gated. */
+  async confirmUploadForAdmin(documentId: string, dto: ConfirmDocumentUploadDto): Promise<Document> {
+    const document = await this.documents.findOne({ where: { id: documentId } });
+    if (!document) throw new NotFoundException('No document with that id.');
+    return this.applyConfirm(document, dto);
+  }
+
+  private async applyConfirm(document: Document, dto: ConfirmDocumentUploadDto): Promise<Document> {
     document.status = DocumentStatus.Uploaded;
     document.url = dto.secureUrl;
     document.bytes = dto.bytes;
@@ -140,6 +178,53 @@ export class DocumentsService {
     return this.documents.find({
       where: { id: In(ids), studentId, status: DocumentStatus.Uploaded },
     });
+  }
+
+  /** Every document belonging to a student, for an admin reviewing their profile. */
+  async listForAdmin(studentId: string): Promise<Document[]> {
+    return this.documents.find({ where: { studentId }, order: { createdAt: 'DESC' } });
+  }
+
+  /**
+   * Rejects an uploaded document and tells the student, both ways: an
+   * in-app row (a plain DB write in this same request — nothing about it
+   * should fail independently) and an email (best-effort, same as
+   * `AuthService.sendVerificationEmailBestEffort` — a failed send must not
+   * roll back the rejection itself).
+   */
+  async reject(documentId: string, reason: string, adminId: string): Promise<Document> {
+    const document = await this.documents.findOne({ where: { id: documentId } });
+    if (!document) throw new NotFoundException('No document with that id.');
+
+    document.status = DocumentStatus.Rejected;
+    document.rejectionReason = reason;
+    document.reviewedAt = new Date();
+    document.reviewedByAdminId = adminId;
+    const saved = await this.documents.save(document);
+
+    const student = await this.students.getAdminDetail(document.studentId);
+    const label = document.type.replace(/_/g, ' ');
+
+    await this.inbox.create({
+      userId: student.userId,
+      type: 'document_rejected',
+      title: 'A document needs another look',
+      body: `Your ${label} was not accepted: ${reason}`,
+      link: '/dashboard/documents',
+    });
+
+    try {
+      await this.notifications.sendDocumentRejected({
+        to: student.email,
+        documentType: label,
+        reason,
+        reviewUrl: `${appUrlForRole(this.env, Role.Student)}/dashboard/documents`,
+      });
+    } catch (error) {
+      this.logger.warn(`Could not send document-rejected email to ${student.email}: ${String(error)}`);
+    }
+
+    return saved;
   }
 
   private credentials(): { cloudName: string; apiKey: string; apiSecret: string } {

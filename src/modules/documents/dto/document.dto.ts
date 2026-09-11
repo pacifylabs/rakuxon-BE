@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEnum, IsInt, IsNotEmpty, IsString, IsUrl, Min } from 'class-validator';
+import { IsEnum, IsInt, IsNotEmpty, IsString, IsUrl, MaxLength, Min } from 'class-validator';
 
 import { DocumentStatus, DocumentType } from '../../../contract/enums';
 
@@ -75,6 +75,18 @@ export class DocumentDto {
   @ApiProperty({ type: String, nullable: true })
   mimeType!: string | null;
 
+  /** Set only when `status` is `rejected` — why, in the reviewer's own words. */
+  @ApiProperty({ type: String, nullable: true })
+  rejectionReason!: string | null;
+
   @ApiProperty({ type: String, format: 'date-time' })
   createdAt!: string;
+}
+
+export class RejectDocumentDto {
+  @ApiProperty({ example: 'The scan is illegible — please re-upload a clearer copy.' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(500)
+  reason!: string;
 }

@@ -59,6 +59,22 @@ export class Document {
   @Column({ type: 'text', nullable: true })
   mimeType!: string | null;
 
+  /** Set together with `status: rejected`. Null otherwise. */
+  @Column({ type: 'text', nullable: true })
+  rejectionReason!: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  reviewedAt!: Date | null;
+
+  /**
+   * No FK to `admins`: that table is a fully separate identity system (see
+   * `AdminIdentityAndPermissions`'s own doc comment), and a cross-system FK
+   * would be the one place that separation leaks back in for what is only
+   * ever an audit label.
+   */
+  @Column({ type: 'uuid', nullable: true })
+  reviewedByAdminId!: string | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;
 

@@ -82,6 +82,7 @@ export enum DocumentStatus {
   PendingUpload = 'pending_upload',
   Uploaded = 'uploaded',
   Deleted = 'deleted',
+  Rejected = 'rejected',
 }
 
 /* ------------------------------------------------------------ applications */

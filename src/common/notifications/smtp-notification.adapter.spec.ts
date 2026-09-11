@@ -54,6 +54,23 @@ describe('SmtpNotificationAdapter', () => {
     expect(sent[0]?.text).toContain('https://app.rakuxon.com/verify-email/secret-token');
   });
 
+  it('sends a document-rejected email carrying the reason and the review link', async () => {
+    const { adapter, sent } = build();
+
+    await adapter.sendDocumentRejected({
+      to: 'ada@example.com',
+      documentType: 'identity',
+      reason: 'The scan is illegible',
+      reviewUrl: 'https://app.rakuxon.com/dashboard/documents',
+    });
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ from: 'Rakuxon <no-reply@rakuxon.com>', to: 'ada@example.com' });
+    expect(sent[0]?.html).toContain('The scan is illegible');
+    expect(sent[0]?.html).toContain('https://app.rakuxon.com/dashboard/documents');
+    expect(sent[0]?.text).toContain('The scan is illegible');
+  });
+
   it('never puts the recipient address in the subject', async () => {
     const { adapter, sent } = build();
     await adapter.sendPasswordReset({
