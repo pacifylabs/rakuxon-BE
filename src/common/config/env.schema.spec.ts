@@ -6,6 +6,8 @@ const valid = {
   REDIS_URL: 'redis://localhost:6380',
   JWT_ACCESS_SECRET: 'a'.repeat(32),
   JWT_REFRESH_SECRET: 'b'.repeat(32),
+  ADMIN_JWT_ACCESS_SECRET: 'd'.repeat(32),
+  ADMIN_JWT_REFRESH_SECRET: 'e'.repeat(32),
   WEB_APP_URL: 'http://localhost:3000',
 };
 
@@ -25,7 +27,15 @@ describe('validateEnv', () => {
     expect(validateEnv({ ...valid, PORT: '8080' }).PORT).toBe(8080);
   });
 
-  it.each(['DATABASE_URL', 'REDIS_URL', 'JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET', 'WEB_APP_URL'])(
+  it.each([
+    'DATABASE_URL',
+    'REDIS_URL',
+    'JWT_ACCESS_SECRET',
+    'JWT_REFRESH_SECRET',
+    'ADMIN_JWT_ACCESS_SECRET',
+    'ADMIN_JWT_REFRESH_SECRET',
+    'WEB_APP_URL',
+  ])(
     'throws when %s is missing',
     (key) => {
       const { [key]: _removed, ...rest } = valid as Record<string, unknown>;
@@ -56,6 +66,22 @@ describe('validateEnv', () => {
     expect(() =>
       validateEnv({ ...valid, JWT_ACCESS_SECRET: shared, JWT_REFRESH_SECRET: shared }),
     ).toThrow(/must differ/);
+  });
+
+  it('rejects a shared admin access and refresh secret', () => {
+    const shared = 'f'.repeat(32);
+    expect(() =>
+      validateEnv({ ...valid, ADMIN_JWT_ACCESS_SECRET: shared, ADMIN_JWT_REFRESH_SECRET: shared }),
+    ).toThrow(/must differ/);
+  });
+
+  it('rejects an admin secret that equals a user secret — the two systems must not cross-verify', () => {
+    expect(() =>
+      validateEnv({ ...valid, ADMIN_JWT_ACCESS_SECRET: valid.JWT_ACCESS_SECRET }),
+    ).toThrow(/separate identity system/);
+    expect(() =>
+      validateEnv({ ...valid, ADMIN_JWT_REFRESH_SECRET: valid.JWT_REFRESH_SECRET }),
+    ).toThrow(/separate identity system/);
   });
 
   it('rejects a malformed database URL', () => {

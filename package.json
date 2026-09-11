@@ -29,7 +29,8 @@
     "catalogue:import:ror": "ts-node -T scripts/import-ror.ts",
     "catalogue:enrich": "ts-node -T scripts/enrich-wikidata.ts",
     "catalogue:seed:articles": "ts-node -T scripts/seed-articles.ts",
-    "catalogue:import:edvoy-courses": "ts-node -T scripts/import-edvoy-courses.ts"
+    "catalogue:import:edvoy-courses": "ts-node -T scripts/import-edvoy-courses.ts",
+    "admin:seed": "ts-node -T scripts/seed-platform-admin.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

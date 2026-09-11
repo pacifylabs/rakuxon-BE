@@ -1,12 +1,13 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { IsNull } from 'typeorm';
 
 import { ENV } from '../../common/config/config.module';
 import { OnboardingLink } from './entities/onboarding-link.entity';
 import { OnboardingLinksService } from './onboarding-links.service';
 import { Tenant } from '../tenants/entities/tenant.entity';
+import { TenantStatus } from '../../contract/enums';
 
 /**
  * Tenant scoping used to be enforced by a row-level security policy. It was
@@ -67,6 +68,7 @@ describe('OnboardingLinksService', () => {
 
   describe('issue', () => {
     it('stamps the issuing tenant onto the link', async () => {
+      tenantsRepo.findOne.mockResolvedValue({ id: 'tenant-a', status: TenantStatus.Active });
       repo.save.mockResolvedValue({
         id: 'link-1',
         inviteeEmail: 'a@b.test',
@@ -85,6 +87,7 @@ describe('OnboardingLinksService', () => {
     });
 
     it('stores only a hash, so a database leak yields no working invitations', async () => {
+      tenantsRepo.findOne.mockResolvedValue({ id: 'tenant-a', status: TenantStatus.Active });
       repo.save.mockResolvedValue({
         id: 'link-1',
         inviteeEmail: 'a@b.test',
@@ -102,6 +105,24 @@ describe('OnboardingLinksService', () => {
 
       expect(stored.tokenHash).not.toBe(token);
       expect(stored.tokenHash).toHaveLength(64);
+    });
+
+    it('refuses to issue for a tenant that is not active', async () => {
+      tenantsRepo.findOne.mockResolvedValue({ id: 'tenant-a', status: TenantStatus.Pending });
+
+      await expect(
+        service.issue({ tenantId: 'tenant-a', issuedByUserId: 'user-1', inviteeEmail: 'a@b.test' }),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(repo.save).not.toHaveBeenCalled();
+    });
+
+    it('refuses to issue when the tenant cannot be found at all', async () => {
+      tenantsRepo.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.issue({ tenantId: 'tenant-a', issuedByUserId: 'user-1', inviteeEmail: 'a@b.test' }),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 

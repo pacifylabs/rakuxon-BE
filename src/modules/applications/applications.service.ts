@@ -6,12 +6,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 
+import type { AdminApplicationSummaryDto } from './dto/admin-application.dto';
 import type { CreateApplicationDto } from './dto/application.dto';
 import { ApplicationDocument } from './entities/application-document.entity';
 import { Application } from './entities/application.entity';
 import { Course } from '../catalogue/entities/course.entity';
+import { Institution } from '../catalogue/entities/institution.entity';
 import {
   ApplicationStatus,
   DocumentStatus,
@@ -21,6 +23,7 @@ import {
 } from '../../contract/enums';
 import { DocumentsService } from '../documents/documents.service';
 import { StudentsService } from '../students/students.service';
+import { Tenant } from '../tenants/entities/tenant.entity';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-request';
 
 /**
@@ -49,6 +52,8 @@ export class ApplicationsService {
     @InjectRepository(ApplicationDocument)
     private readonly applicationDocuments: Repository<ApplicationDocument>,
     @InjectRepository(Course) private readonly courses: Repository<Course>,
+    @InjectRepository(Institution) private readonly institutions: Repository<Institution>,
+    @InjectRepository(Tenant) private readonly tenants: Repository<Tenant>,
     private readonly students: StudentsService,
     private readonly documents: DocumentsService,
   ) {}
@@ -102,6 +107,35 @@ export class ApplicationsService {
 
   async get(user: AuthenticatedUser, id: string): Promise<ApplicationWithGates> {
     return this.withGates(await this.ownedApplication(user, id));
+  }
+
+  /**
+   * Admin oversight — unscoped by student or tenant, unlike every method
+   * above. Kept as its own pair of methods rather than reusing
+   * `ownedApplication()`/`list()`, so the student-facing ownership check can
+   * never accidentally be relaxed by a change made for the admin path.
+   */
+  async listAdmin(
+    query: { status?: ApplicationStatus; tenantId?: string; page?: number; limit?: number },
+  ): Promise<{ items: Application[]; total: number; page: number; pageCount: number }> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 24;
+
+    const builder = this.applications.createQueryBuilder('a');
+    if (query.status) builder.andWhere('a.status = :status', { status: query.status });
+    if (query.tenantId) builder.andWhere('a."tenantId" = :tenantId', { tenantId: query.tenantId });
+
+    builder.orderBy('a.createdAt', 'DESC').skip((page - 1) * limit).take(limit);
+
+    const [items, total] = await builder.getManyAndCount();
+
+    return { items, total, page, pageCount: Math.max(1, Math.ceil(total / limit)) };
+  }
+
+  async getAdmin(id: string): Promise<ApplicationWithGates> {
+    const application = await this.applications.findOne({ where: { id } });
+    if (!application) throw new NotFoundException('No application with that id.');
+    return this.withGates(application);
   }
 
   async attachDocument(
@@ -199,5 +233,47 @@ export class ApplicationsService {
       missingDocumentTypes,
       readyToSubmit: missingDocumentTypes.length === 0,
     };
+  }
+
+  /**
+   * A raw `Application` row only carries ids — every admin screen needs the
+   * names behind them. Batched here (one query per related table) rather
+   * than resolved per row, which is what the summary DTO's own doc comment
+   * already warned an admin list must avoid.
+   */
+  async enrichSummaries(applications: Application[]): Promise<AdminApplicationSummaryDto[]> {
+    if (applications.length === 0) return [];
+
+    const studentIds = [...new Set(applications.map((row) => row.studentId))];
+    const courseIds = [...new Set(applications.map((row) => row.courseId))];
+    const institutionIds = [...new Set(applications.map((row) => row.institutionId))];
+    const tenantIds = [...new Set(applications.map((row) => row.tenantId))];
+
+    const [studentSummaries, courses, institutions, tenants] = await Promise.all([
+      this.students.getSummariesForAdmin(studentIds),
+      this.courses.find({ where: { id: In(courseIds) } }),
+      this.institutions.find({ where: { id: In(institutionIds) } }),
+      this.tenants.find({ where: { id: In(tenantIds) } }),
+    ]);
+
+    const courseTitleById = new Map(courses.map((course) => [course.id, course.title]));
+    const institutionNameById = new Map(institutions.map((institution) => [institution.id, institution.name]));
+    const tenantNameById = new Map(tenants.map((tenant) => [tenant.id, tenant.name]));
+
+    return applications.map((row) => ({
+      id: row.id,
+      tenantId: row.tenantId,
+      tenantName: tenantNameById.get(row.tenantId) ?? 'Unknown tenant',
+      studentId: row.studentId,
+      studentName: studentSummaries.get(row.studentId)?.fullName ?? 'Unknown student',
+      studentEmail: studentSummaries.get(row.studentId)?.email ?? '',
+      courseId: row.courseId,
+      courseTitle: courseTitleById.get(row.courseId) ?? 'Unknown course',
+      institutionId: row.institutionId,
+      institutionName: institutionNameById.get(row.institutionId) ?? 'Unknown institution',
+      status: row.status,
+      submittedAt: row.submittedAt?.toISOString() ?? null,
+      createdAt: row.createdAt.toISOString(),
+    }));
   }
 }

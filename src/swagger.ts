@@ -24,6 +24,10 @@ export function setupSwagger(app: INestApplication): void {
         '',
         '**Testing here.** Call `POST /v1/auth/register` then `POST /v1/auth/login`, press',
         '*Authorize*, and paste the `accessToken`. It persists across reloads.',
+        '',
+        '**Admin.** `/v1/admin-auth/*` and `/v1/admin/*` are a fully separate identity system —',
+        'their own table, their own tokens (the `admin-access-token` scheme below), no overlap',
+        'with the bearer token above. See `pnpm admin:seed` to create the first admin account.',
       ].join('\n'),
     )
     .setVersion('1.0')
@@ -31,9 +35,18 @@ export function setupSwagger(app: INestApplication): void {
       { type: 'http', scheme: 'bearer', bearerFormat: 'JWT', in: 'header' },
       'access-token',
     )
+    .addBearerAuth(
+      { type: 'http', scheme: 'bearer', bearerFormat: 'JWT', in: 'header' },
+      'admin-access-token',
+    )
     .addTag('health', 'Liveness and dependency checks')
     .addTag('auth', 'Registration, login, token rotation and password reset')
     .addTag('onboarding-links', 'Tokenised student invitations')
+    .addTag('admin-auth', 'Admin login, token rotation and password reset — separate from auth')
+    .addTag('admins', 'Managing admin accounts and their permissions')
+    .addTag('tenants', 'Vetting agency tenants — approve, suspend, reinstate')
+    .addTag('admin-catalogue', 'Catalogue moderation — list drafts, publish, suspend')
+    .addTag('admin-applications', 'Read-only application oversight across every tenant')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

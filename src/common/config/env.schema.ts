@@ -55,6 +55,15 @@ export const envSchema = z.object({
   JWT_ACCESS_TTL: z.coerce.number().int().positive().default(900),
   JWT_REFRESH_TTL: z.coerce.number().int().positive().default(1_209_600),
 
+  /**
+   * A second, unrelated secret pair for admin sessions — never the same
+   * value as JWT_ACCESS_SECRET/JWT_REFRESH_SECRET (checked below). Admin auth
+   * is a fully separate system from the users/student/agency path; sharing a
+   * secret would let a token from one system verify as valid on the other.
+   */
+  ADMIN_JWT_ACCESS_SECRET: z.string().min(32, 'ADMIN_JWT_ACCESS_SECRET must be at least 32 characters'),
+  ADMIN_JWT_REFRESH_SECRET: z.string().min(32, 'ADMIN_JWT_REFRESH_SECRET must be at least 32 characters'),
+
   /** Where links in emails point. One canonical origin. */
   WEB_APP_URL: singleUrl('WEB_APP_URL'),
 
@@ -121,6 +130,16 @@ export const envSchema = z.object({
   SMTP_PASSWORD: z.string().optional(),
   /** "Rakuxon <no-reply@rakuxon.com>" — passed straight through as the From header. */
   SMTP_FROM: z.string().optional(),
+
+  /*
+   * Script-only, read by scripts/seed-platform-admin.ts. Optional at the
+   * schema level so the app still boots without them — the script does its
+   * own presence check and fails fast with a clear message instead.
+   */
+  BOOTSTRAP_ADMIN_EMAIL: z.string().optional(),
+  BOOTSTRAP_ADMIN_PASSWORD: z.string().optional(),
+  BOOTSTRAP_ADMIN_FIRST_NAME: z.string().optional(),
+  BOOTSTRAP_ADMIN_LAST_NAME: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -150,6 +169,26 @@ export function validateEnv(source: Record<string, unknown>): Env {
   if (result.data.JWT_ACCESS_SECRET === result.data.JWT_REFRESH_SECRET) {
     throw new EnvValidationError([
       'JWT_REFRESH_SECRET: must differ from JWT_ACCESS_SECRET, or a refresh token doubles as an access token',
+    ]);
+  }
+
+  if (result.data.ADMIN_JWT_ACCESS_SECRET === result.data.ADMIN_JWT_REFRESH_SECRET) {
+    throw new EnvValidationError([
+      'ADMIN_JWT_REFRESH_SECRET: must differ from ADMIN_JWT_ACCESS_SECRET, or a refresh token doubles as an access token',
+    ]);
+  }
+
+  /* The whole point of a separate secret pair: a token minted for one
+     identity system must never verify as valid on the other. */
+  const sharedWithUserSecrets =
+    result.data.ADMIN_JWT_ACCESS_SECRET === result.data.JWT_ACCESS_SECRET ||
+    result.data.ADMIN_JWT_ACCESS_SECRET === result.data.JWT_REFRESH_SECRET ||
+    result.data.ADMIN_JWT_REFRESH_SECRET === result.data.JWT_ACCESS_SECRET ||
+    result.data.ADMIN_JWT_REFRESH_SECRET === result.data.JWT_REFRESH_SECRET;
+
+  if (sharedWithUserSecrets) {
+    throw new EnvValidationError([
+      'ADMIN_JWT_ACCESS_SECRET/ADMIN_JWT_REFRESH_SECRET: must not equal JWT_ACCESS_SECRET or JWT_REFRESH_SECRET — admin sessions are a separate identity system and must not verify against the other',
     ]);
   }
 

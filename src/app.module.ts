@@ -10,12 +10,16 @@ import { RolesGuard } from './common/rbac/roles.guard';
 import { TenantResolutionMiddleware } from './common/tenancy/tenant-resolution.middleware';
 import { SyncIndexesService } from './database/sync-indexes.service';
 import { buildDataSourceOptions } from './database/data-source';
+import { AdminAuthModule } from './modules/admin-auth/admin-auth.module';
+import { AdminsModule } from './modules/admins/admins.module';
 import { ApplicationsModule } from './modules/applications/applications.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CatalogueModule } from './modules/catalogue/catalogue.module';
+import { AdminDashboardModule } from './modules/dashboard/admin-dashboard.module';
 import { DocumentsModule } from './modules/documents/documents.module';
 import { OnboardingLinksModule } from './modules/onboarding-links/onboarding-links.module';
 import { StudentsModule } from './modules/students/students.module';
+import { TenantsModule } from './modules/tenants/tenants.module';
 
 @Module({
   imports: [
@@ -29,6 +33,10 @@ import { StudentsModule } from './modules/students/students.module';
     StudentsModule,
     DocumentsModule,
     ApplicationsModule,
+    AdminAuthModule,
+    AdminsModule,
+    TenantsModule,
+    AdminDashboardModule,
   ],
   providers: [
     SyncIndexesService,

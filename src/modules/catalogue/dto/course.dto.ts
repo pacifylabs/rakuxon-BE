@@ -1,15 +1,21 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsString, Length, Max, Min } from 'class-validator';
+import { IsEnum, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Length, Max, Min } from 'class-validator';
 
 import { IntakeStatus, StudyLevel, StudyMode, TuitionPeriod } from '../../../contract/enums';
 import type { EnglishTest, Intake, RequirementGroup, Scholarship } from '../entities/shared.types';
 
+/**
+ * Doubles as both the public response shape (used as-is, decorators are
+ * inert for serialization) and the admin authoring input shape (the
+ * `@Is*` decorators below are what validate a PATCH's `intakes` array) —
+ * one class rather than two, since the fields are identical either way.
+ */
 export class IntakeDto implements Intake {
-  @ApiProperty({ example: 'Sep' }) month!: string;
-  @ApiProperty({ example: 2026 }) year!: number;
-  @ApiPropertyOptional({ type: String, format: 'date' }) applicationDeadline?: string;
-  @ApiProperty({ enum: IntakeStatus, enumName: 'IntakeStatus' }) status!: IntakeStatus;
+  @ApiProperty({ example: 'Sep' }) @IsString() @IsNotEmpty() month!: string;
+  @ApiProperty({ example: 2026 }) @IsInt() year!: number;
+  @ApiPropertyOptional({ type: String, format: 'date' }) @IsOptional() @IsString() applicationDeadline?: string;
+  @ApiProperty({ enum: IntakeStatus, enumName: 'IntakeStatus' }) @IsIn(Object.values(IntakeStatus)) status!: IntakeStatus;
 }
 
 export class ListCoursesQueryDto {

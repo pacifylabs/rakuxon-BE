@@ -32,7 +32,12 @@ const looksLocal = (url?: string): boolean =>
   Boolean(url) && /localhost|127\.0\.0\.1|\[::1\]/.test(url as string);
 
 /** Values shipped in .env.example, which must never reach a deployment. */
-const SHIPPED_SECRETS = ['local-dev-access-secret', 'local-dev-refresh-secret', 'change-me'];
+const SHIPPED_SECRETS = [
+  'local-dev-access-secret',
+  'local-dev-refresh-secret',
+  'change-me',
+  'and-this-one-also-different',
+];
 
 /*
  * Reads process.env directly rather than a parsed Env.
@@ -51,7 +56,12 @@ function auditForProduction(): void {
     );
   }
 
-  for (const name of ['JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET'] as const) {
+  for (const name of [
+    'JWT_ACCESS_SECRET',
+    'JWT_REFRESH_SECRET',
+    'ADMIN_JWT_ACCESS_SECRET',
+    'ADMIN_JWT_REFRESH_SECRET',
+  ] as const) {
     const value = raw[name] ?? '';
     if (SHIPPED_SECRETS.some((seed) => value.startsWith(seed))) {
       /* Fine locally — that is what .env.example is for. Fatal anywhere real,

@@ -2,7 +2,8 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 
-import { Role, UserStatus } from '../../src/contract/enums';
+import { Role, TenantStatus, UserStatus } from '../../src/contract/enums';
+import { Tenant } from '../../src/modules/tenants/entities/tenant.entity';
 import { User } from '../../src/modules/users/entities/user.entity';
 import { createTestApp, truncateIdentity, uniqueSlug } from '../helpers/create-test-app';
 
@@ -65,6 +66,13 @@ describe('onboarding links', () => {
     adminToken = session.accessToken;
     tenantId = session.user.tenantId;
     counselorToken = await addCounselor(tenantId);
+
+    /* A fresh agency starts pending, and issuing a link is gated on being
+       active (see the "vetting gate" tests below) — activate directly here
+       so every other describe block in this file, which predates the gate,
+       keeps testing issuing/consuming/peeking/registering rather than the
+       gate itself. */
+    await app.get(DataSource).getRepository(Tenant).update(tenantId, { status: TenantStatus.Active });
   });
 
   afterAll(async () => {
@@ -289,6 +297,41 @@ describe('onboarding links', () => {
         .post('/v1/onboarding-links/register')
         .send({ token: 'never-existed', firstName: 'New', lastName: 'Student', password: 'correct-horse-battery' })
         .expect(401);
+    });
+  });
+
+  describe('tenant vetting gate', () => {
+    it('refuses to issue a link from a pending tenant', async () => {
+      const pending = await registerAgency();
+
+      const response = await request(app.getHttpServer())
+        .post('/v1/onboarding-links')
+        .set('Authorization', `Bearer ${pending.accessToken}`)
+        .send({ inviteeEmail: 'student@example.com' })
+        .expect(403);
+
+      expect(response.body.message).toBe('Your agency is pending approval before you can invite students.');
+    });
+
+    it('allows issuing once the tenant is approved', async () => {
+      const fresh = await registerAgency();
+
+      await request(app.getHttpServer())
+        .post('/v1/onboarding-links')
+        .set('Authorization', `Bearer ${fresh.accessToken}`)
+        .send({ inviteeEmail: 'student@example.com' })
+        .expect(403);
+
+      await app
+        .get(DataSource)
+        .getRepository(Tenant)
+        .update(fresh.user.tenantId, { status: TenantStatus.Active });
+
+      await request(app.getHttpServer())
+        .post('/v1/onboarding-links')
+        .set('Authorization', `Bearer ${fresh.accessToken}`)
+        .send({ inviteeEmail: 'student2@example.com' })
+        .expect(201);
     });
   });
 });

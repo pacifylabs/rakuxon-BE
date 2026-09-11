@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 
-import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 
@@ -8,6 +8,7 @@ import { OnboardingLink } from './entities/onboarding-link.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
 import { ENV } from '../../common/config/config.module';
 import type { Env } from '../../common/config/env.schema';
+import { TenantStatus } from '../../contract/enums';
 import type {
   ConsumedLinkDto,
   OnboardingLinkDto,
@@ -46,6 +47,17 @@ export class OnboardingLinksService {
     inviteeEmail: string;
     expiresInDays?: number;
   }): Promise<OnboardingLinkDto> {
+    /*
+     * The one capability a pending (unvetted) agency has today that pulls
+     * real student data into the system before an admin has looked at it —
+     * see the admin tenant-vetting flow. Every other agency action doesn't
+     * exist yet as a capability, so this is the single narrow gate.
+     */
+    const tenant = await this.tenants.findOne({ where: { id: input.tenantId } });
+    if (tenant?.status !== TenantStatus.Active) {
+      throw new ForbiddenException('Your agency is pending approval before you can invite students.');
+    }
+
     const token = randomBytes(32).toString('base64url');
     const days = input.expiresInDays ?? DEFAULT_EXPIRY_DAYS;
 
