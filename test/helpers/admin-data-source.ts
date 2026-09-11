@@ -2,6 +2,7 @@ import { DataSource } from 'typeorm';
 
 import { buildDataSourceOptions } from '../../src/database/data-source';
 import { HOUSE_TENANT_ID } from '../../src/contract/constants';
+import { isLocalDatabaseUrl } from './local-database';
 
 /**
  * The owner connection.
@@ -19,7 +20,10 @@ export async function adminDataSource(): Promise<DataSource> {
     /* Checked before connecting, not before truncating: migrations run on this
        connection too, and a migration against production is as bad as a wipe. */
     assertLocalDatabase((options as { url?: string }).url ?? '');
-    shared = new DataSource(options);
+    /* Never synchronises, even when the app under test does: migrations own the
+       schema, and a synchronising owner connection would try to build tables
+       before the migration that creates the functions they depend on. */
+    shared = new DataSource({ ...options, synchronize: false });
     await shared.initialize();
   }
 
@@ -40,9 +44,9 @@ export async function closeAdminDataSource(): Promise<void> {
  * `pnpm test`. It was caught once by an unrelated validation error, which is
  * not a control.
  */
-const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', 'postgres', 'db']);
-
 function assertLocalDatabase(url: string): void {
+  if (isLocalDatabaseUrl(url)) return;
+
   const host = (() => {
     try {
       return new URL(url).hostname;
@@ -50,8 +54,6 @@ function assertLocalDatabase(url: string): void {
       return '';
     }
   })();
-
-  if (LOCAL_HOSTS.has(host)) return;
 
   throw new Error(
     `Refusing to TRUNCATE: DATABASE_URL points at "${host || 'an unparseable host'}", ` +

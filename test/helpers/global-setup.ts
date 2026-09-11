@@ -2,21 +2,23 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { isLocalDatabaseUrl } from './local-database';
+
 /**
  * A throwaway Postgres for the e2e suite: no Docker, and never a shared or
  * hosted database.
  *
  * The suite TRUNCATEs between files, so it must only ever point at a database
- * that exists for the length of one run. This starts a real Postgres 18 — the
- * major version Neon runs — in a fresh temporary directory on a free port, and
+ * that exists for the length of one run. This starts a real Postgres 16 — the
+ * major version CI and the VPS production database run, where schema sync is
+ * switched on — in a fresh temporary directory on a free port, and
  * global-teardown.ts deletes it afterwards.
  *
- * DATABASE_URL is set here unconditionally. The one in .env is production, and
- * one exported in a shell is whatever someone last debugged against; neither is
- * ever used by the tests.
- *
- * To run against an existing *local* Postgres instead, set TEST_DATABASE_URL;
- * the localhost guard in admin-data-source.ts still applies to it.
+ * A database someone deliberately provided is used as-is, but only a local one:
+ * CI's service container sets DATABASE_URL, and a Postgres.app `rakuxon_test`
+ * can be chosen with TEST_DATABASE_URL. Anything else — the production URL in
+ * .env, or a hosted one left exported in a shell — is ignored in favour of a
+ * throwaway, so it is never used and never truncated.
  */
 
 const USER = 'rakuxon';
@@ -67,8 +69,9 @@ function freePort(): Promise<number> {
 export default async function globalSetup(): Promise<void> {
   process.env.DATABASE_SSL = 'false';
 
-  if (process.env.TEST_DATABASE_URL) {
-    process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
+  const provided = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
+  if (provided && isLocalDatabaseUrl(provided)) {
+    process.env.DATABASE_URL = provided;
     return;
   }
 

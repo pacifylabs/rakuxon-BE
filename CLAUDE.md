@@ -113,7 +113,7 @@ import run.
 New behaviour ships with tests. A bug fix ships with a regression test that
 fails before the fix. Don't weaken a failing test to green the suite.
 
-E2E specs live in `test/e2e/`. They start a throwaway Postgres 18 via
+E2E specs live in `test/e2e/`. They start a throwaway Postgres 16 (production's major) via
 `embedded-postgres` (test/helpers/global-setup.ts) and never use `.env`'s
 database, which is production. They share
 fixtures, so a test that mutates one must restore it in a `finally`.

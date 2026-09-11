@@ -1,8 +1,9 @@
 /**
  * Test environment defaults for everything except the database.
  *
- * DATABASE_URL and DATABASE_SSL are set by global-setup.ts, which starts a
- * throwaway Postgres for the run; they are deliberately not defaulted here.
+ * DATABASE_URL and DATABASE_SSL are set by global-setup.ts: a provided local
+ * database (CI's, or TEST_DATABASE_URL) is used as-is, and otherwise it starts
+ * a throwaway Postgres. They are deliberately not defaulted here.
  * Anything else already exported wins, so CI can override it.
  */
 const defaults: Record<string, string> = {

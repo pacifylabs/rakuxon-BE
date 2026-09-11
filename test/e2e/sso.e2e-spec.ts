@@ -35,6 +35,11 @@ describe('single sign-on', () => {
   let provider: StubProvider;
 
   beforeAll(async () => {
+    /* Migrations first, as createTestApp does: with DATABASE_SYNCHRONIZE on, the
+       app synchronises on boot, and on a fresh database that needs the
+       functions a migration creates. */
+    await (await adminDataSource()).runMigrations();
+
     provider = new StubProvider();
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
@@ -48,8 +53,6 @@ describe('single sign-on', () => {
       new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
     );
     await app.init();
-    /* Owner connection: the runtime role has no DDL rights by design. */
-    await (await adminDataSource()).runMigrations();
   });
 
   afterAll(async () => {

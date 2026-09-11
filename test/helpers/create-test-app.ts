@@ -59,6 +59,16 @@ export interface TestApp {
 
 /** Boots the real app with the same pipes and versioning main.ts applies. */
 export async function createTestApp(): Promise<TestApp> {
+  /*
+   * Migrations run first, on the owner connection (the application role has no
+   * DDL rights, which is the point), and only then does the app boot. With
+   * DATABASE_SYNCHRONIZE on, booting synchronises the schema from the entities,
+   * whose generated search columns call a function a migration creates — so on
+   * a fresh database, booting first fails before any test runs. CI hid this by
+   * migrating in a separate step beforehand; this order no longer depends on it.
+   */
+  await (await adminDataSource()).runMigrations();
+
   const notifications = new CapturingNotifications();
 
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
@@ -74,10 +84,6 @@ export async function createTestApp(): Promise<TestApp> {
   );
 
   await app.init();
-
-  /* Migrations run on the owner connection: the application role has no DDL
-     rights, which is the point. */
-  await (await adminDataSource()).runMigrations();
 
   return { app, notifications };
 }
