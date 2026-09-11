@@ -14,7 +14,12 @@ import type {
   InstitutionSummaryDto,
   ListInstitutionsQueryDto,
 } from './dto/institution.dto';
-import type { CourseListDto, CourseSummaryDto, ListCoursesQueryDto } from './dto/course.dto';
+import type {
+  CourseDetailDto,
+  CourseListDto,
+  CourseSummaryDto,
+  ListCoursesQueryDto,
+} from './dto/course.dto';
 import type {
   ArticleDetailDto,
   ArticleListDto,
@@ -191,7 +196,7 @@ export class CatalogueService {
     };
   }
 
-  async institutionBySlug(slug: string): Promise<Institution> {
+  async institutionBySlug(slug: string): Promise<Institution & { courseCount: number }> {
     const found = await this.institutions.findOne({
       where: { slug, status: PublishStatus.Published },
     });
@@ -200,7 +205,12 @@ export class CatalogueService {
        not something an anonymous visitor should be able to probe for. */
     if (!found) throw new NotFoundException('No such university.');
 
-    return { ...found, highlights: this.highlightsFor(found) };
+    /* Published courses only, so the count agrees with the list it sits above. */
+    const courseCount = await this.courses.count({
+      where: { institutionId: found.id, status: PublishStatus.Published },
+    });
+
+    return { ...found, highlights: this.highlightsFor(found), courseCount };
   }
 
   /**
@@ -331,6 +341,33 @@ export class CatalogueService {
     };
   }
 
+  /**
+   * One course, with its university.
+   *
+   * A course at an unpublished university is as unpublished as its host, and
+   * 404s for the same reason the university would.
+   */
+  async courseBySlug(slug: string): Promise<CourseDetailDto> {
+    const found = await this.courses.findOne({
+      where: { slug, status: PublishStatus.Published, institution: { status: PublishStatus.Published } },
+      relations: { institution: true },
+    });
+    if (!found?.institution) throw new NotFoundException('No such course.');
+
+    return {
+      ...this.toCourseSummary(found),
+      overview: found.overview ?? undefined,
+      highlights: found.highlights,
+      careers: found.careers ?? undefined,
+      campus: found.campus ?? undefined,
+      tuitionPeriod: found.tuitionPeriod,
+      entryRequirements: found.entryRequirements,
+      englishTests: found.englishTests,
+      scholarships: found.scholarships,
+      offerResponseWeeks: found.offerResponseWeeks ?? undefined,
+    };
+  }
+
   private toCourseSummary(row: Course): CourseSummaryDto {
     return {
       id: row.id,
@@ -339,9 +376,10 @@ export class CatalogueService {
       level: row.level,
       studyMode: row.studyMode,
       disciplines: row.disciplines,
-      durationMonths: row.durationMonths,
+      durationMonths: row.durationMonths ?? undefined,
       tuitionAmount: row.tuitionAmount ?? undefined,
       tuitionCurrency: row.tuitionCurrency ?? undefined,
+      tuitionIsEstimate: row.tuitionIsEstimate,
       fastTrackOffer: row.fastTrackOffer,
       intakes: row.intakes,
       institutionId: row.institution!.id,

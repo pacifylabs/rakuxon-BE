@@ -2,8 +2,8 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsEnum, IsInt, IsOptional, IsString, Length, Max, Min } from 'class-validator';
 
-import { IntakeStatus, StudyLevel, StudyMode } from '../../../contract/enums';
-import type { Intake } from '../entities/shared.types';
+import { IntakeStatus, StudyLevel, StudyMode, TuitionPeriod } from '../../../contract/enums';
+import type { EnglishTest, Intake, RequirementGroup, Scholarship } from '../entities/shared.types';
 
 export class IntakeDto implements Intake {
   @ApiProperty({ example: 'Sep' }) month!: string;
@@ -64,10 +64,13 @@ export class CourseSummaryDto {
   @ApiProperty({ enum: StudyLevel, enumName: 'StudyLevel' }) level!: StudyLevel;
   @ApiProperty({ enum: StudyMode, enumName: 'StudyMode' }) studyMode!: StudyMode;
   @ApiProperty({ type: [String] }) disciplines!: string[];
-  @ApiProperty() durationMonths!: number;
+  @ApiPropertyOptional({ description: 'Absent where the source does not state it; never estimated.' })
+  durationMonths?: number;
   @ApiPropertyOptional({ description: 'Null where a fee has not been recorded.', example: '18500.00' })
   tuitionAmount?: string;
   @ApiPropertyOptional({ example: 'GBP' }) tuitionCurrency?: string;
+  @ApiProperty({ description: 'The source calls the fee approximate, so it must be shown as one.' })
+  tuitionIsEstimate!: boolean;
   @ApiProperty() fastTrackOffer!: boolean;
   @ApiProperty({ type: [IntakeDto] }) intakes!: Intake[];
 
@@ -83,4 +86,17 @@ export class CourseListDto {
   @ApiProperty() total!: number;
   @ApiProperty() page!: number;
   @ApiProperty() pageCount!: number;
+}
+
+/** The whole course. Imported courses leave most of this empty; the page hides what is. */
+export class CourseDetailDto extends CourseSummaryDto {
+  @ApiPropertyOptional() overview?: string;
+  @ApiProperty({ type: [String] }) highlights!: string[];
+  @ApiPropertyOptional() careers?: string;
+  @ApiPropertyOptional() campus?: string;
+  @ApiProperty({ enum: TuitionPeriod, enumName: 'TuitionPeriod' }) tuitionPeriod!: TuitionPeriod;
+  @ApiProperty({ type: 'array', items: { type: 'object' } }) entryRequirements!: RequirementGroup[];
+  @ApiProperty({ type: 'array', items: { type: 'object' } }) englishTests!: EnglishTest[];
+  @ApiProperty({ type: 'array', items: { type: 'object' } }) scholarships!: Scholarship[];
+  @ApiPropertyOptional() offerResponseWeeks?: number;
 }

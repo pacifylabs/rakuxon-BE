@@ -9,7 +9,7 @@ import {
   ListInstitutionsQueryDto,
 } from './dto/institution.dto';
 import { ArticleDetailDto, ArticleListDto, ListArticlesQueryDto } from './dto/article.dto';
-import { CourseListDto, ListCoursesQueryDto } from './dto/course.dto';
+import { CourseDetailDto, CourseListDto, ListCoursesQueryDto } from './dto/course.dto';
 import { SearchQueryDto, SearchResponseDto } from './dto/search.dto';
 import { Institution } from './entities/institution.entity';
 import { Public } from '../../common/auth/public.decorator';
@@ -86,7 +86,7 @@ export class CatalogueController {
   @ApiOperation({ summary: 'One university' })
   @ApiOkResponse({ type: Institution })
   @ApiNotFoundResponse({ description: 'No published university with that slug.' })
-  institution(@Param('slug') slug: string): Promise<Institution> {
+  institution(@Param('slug') slug: string): Promise<Institution & { courseCount: number }> {
     return this.catalogue.institutionBySlug(slug);
   }
 
@@ -101,6 +101,15 @@ export class CatalogueController {
   @ApiOkResponse({ type: CourseListDto })
   listCourses(@Query() query: ListCoursesQueryDto): Promise<CourseListDto> {
     return this.catalogue.listCourses(query);
+  }
+
+  @Public()
+  @Get('courses/:slug')
+  @ApiOperation({ summary: 'One course, with its university' })
+  @ApiOkResponse({ type: CourseDetailDto })
+  @ApiNotFoundResponse({ description: 'No published course, at a published university, with that slug.' })
+  course(@Param('slug') slug: string): Promise<CourseDetailDto> {
+    return this.catalogue.courseBySlug(slug);
   }
 
   @Public()

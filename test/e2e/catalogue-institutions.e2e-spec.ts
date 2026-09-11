@@ -25,6 +25,11 @@ describe('catalogue institutions', () => {
       INSERT INTO courses (slug,"institutionId",title,level,"durationMonths",overview,status)
         SELECT 'probe-course-2', id, 'MSc Draft','postgraduate',12,'x','draft'
         FROM institutions WHERE slug='probe-manchester';
+      INSERT INTO courses (slug,"institutionId",title,level,"durationMonths",overview,status)
+        SELECT 'probe-course-3', id, 'MSc Hidden Host','postgraduate',12,'x','published'
+        FROM institutions WHERE slug='probe-hidden';
+      UPDATE courses SET "tuitionAmount" = 24800, "tuitionCurrency" = 'GBP', "tuitionIsEstimate" = true
+        WHERE slug = 'probe-course-1';
     `);
   });
 
@@ -143,6 +148,51 @@ describe('catalogue institutions', () => {
 
     it('404s for an unknown slug', async () => {
       await get('/institutions/nope').expect(404);
+    });
+  });
+
+  describe('courses', () => {
+    it('counts only published courses on the university, so the count agrees with the list', async () => {
+      const { body } = await get('/institutions/probe-manchester').expect(200);
+      expect(body.courseCount).toBe(1);
+    });
+
+    it('carries the estimate flag with a sourced fee, so the page can say approximate', async () => {
+      const { body } = await get('/courses?institutionSlug=probe-manchester').expect(200);
+
+      expect(body.total).toBe(1);
+      expect(body.items[0]).toMatchObject({
+        slug: 'probe-course-1',
+        tuitionAmount: '24800.00',
+        tuitionCurrency: 'GBP',
+        tuitionIsEstimate: true,
+      });
+    });
+
+    it('returns one course with its university', async () => {
+      const { body } = await get('/courses/probe-course-1').expect(200);
+
+      expect(body).toMatchObject({
+        slug: 'probe-course-1',
+        title: 'MSc Data Science',
+        institutionSlug: 'probe-manchester',
+        institutionName: 'University of Manchester',
+        tuitionIsEstimate: true,
+      });
+      expect(body.highlights).toEqual([]);
+    });
+
+    it('404s a draft course rather than revealing it exists', async () => {
+      await get('/courses/probe-course-2').expect(404);
+    });
+
+    it('404s a published course whose university is unpublished', async () => {
+      // As unpublished as its host: the course page must not leak a draft university.
+      await get('/courses/probe-course-3').expect(404);
+    });
+
+    it('404s an unknown course', async () => {
+      await get('/courses/no-such-course').expect(404);
     });
   });
 });

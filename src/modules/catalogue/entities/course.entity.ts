@@ -23,6 +23,9 @@ import type { EnglishTest, Intake, RequirementGroup, Scholarship } from './share
 @Index('courses_institution_idx', ['institutionId'])
 @Index('courses_level_idx', ['level'])
 @Index('courses_status_idx', ['status'])
+/* Declared so opt-in schema sync keeps it: the importer upserts on this pair,
+   and sync drops any index the entity does not name. */
+@Index('courses_source_ref_idx', ['source', 'sourceRef'], { unique: true })
 export class Course {
   /** Keep the migration's generated search column when entity sync is enabled. */
   @Column({
