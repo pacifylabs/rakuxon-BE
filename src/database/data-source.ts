@@ -22,7 +22,19 @@ export function buildDataSourceOptions(
   return {
     type: 'postgres',
     url: env.DATABASE_URL,
-    ssl: env.DATABASE_SSL ? { rejectUnauthorized: false } : false,
+    /*
+     * Verify the server's certificate. `rejectUnauthorized: false` encrypted
+     * the link but accepted any certificate, so anything in the network path
+     * could pose as the database. Neon presents a publicly trusted
+     * certificate, which the default CA store verifies.
+     *
+     * pg gives the URL precedence: an `sslmode` in DATABASE_URL replaces this
+     * option outright (pg-connection-string is parsed over the config).
+     * `sslmode=require` is currently treated as verify-full, so such URLs
+     * verify as well — but `sslmode=no-verify` or `disable` in the URL would
+     * still win over this line.
+     */
+    ssl: env.DATABASE_SSL ? { rejectUnauthorized: true } : false,
     synchronize: env.DATABASE_SYNCHRONIZE,
     logging: env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
     entities: [`${__dirname}/../modules/**/entities/*.entity.{ts,js}`],
