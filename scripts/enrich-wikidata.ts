@@ -3,6 +3,7 @@ import 'dotenv/config';
 import { DataSource, IsNull } from 'typeorm';
 
 import { buildDataSourceOptions } from '../src/database/data-source';
+import { commonsThumb, heroImageFrom } from './lib/commons-image';
 import { connectWithRetry, withReconnect } from './lib/resilient-db';
 import { Institution } from '../src/modules/catalogue/entities/institution.entity';
 
@@ -82,22 +83,6 @@ const NOTABLE_MEMBERSHIPS = new Set([
 
 /** "https://ror.org/04xvc2q17" -> "04xvc2q17", which is what Wikidata stores. */
 const rorId = (sourceUrl: string) => sourceUrl.replace(/^.*\/(?=[^/]+$)/, '');
-
-/**
- * Makes a Commons file reference usable from a browser.
- *
- * Wikidata returns these as http:// pointers to Special:FilePath, which serves
- * the original upload. Two problems, both fatal in a page: http on an https
- * site is blocked as mixed content before it is ever requested, and the
- * original is whatever resolution someone uploaded — occasionally several
- * megabytes for something rendered at 48px. Special:FilePath takes a width
- * parameter and resizes server-side, so ask for the size we actually use.
- */
-const commonsThumb = (url: string, width = 320): string => {
-  const https = url.replace(/^http:\/\//, 'https://');
-  if (!https.includes('/Special:FilePath/')) return https;
-  return `${https}${https.includes('?') ? '&' : '?'}width=${width}`;
-};
 
 function buildQuery(ids: readonly string[]): string {
   const values = ids.map((id) => `"${id}"`).join(' ');
@@ -205,7 +190,12 @@ function fold(rows: readonly Binding[]): Enrichment {
     .filter((n) => Number.isFinite(n) && n > 0);
 
   const logo = rows.find((row) => row.logo?.value)?.logo?.value;
-  /* Wider than a logo: this one is displayed as a banner, not an icon. */
+  /*
+   * Wider than a logo: this one is displayed as a banner, not an icon — which
+   * is why heroImageFrom drops it when P18 is itself a mark. A few hundred
+   * items have no photograph, only the logo, and a banner is the one place
+   * that image may not go: the licence covers the file, not the trademark.
+   */
   const image = rows.find((row) => row.image?.value)?.image?.value;
   const point = parsePoint(rows.find((row) => row.coord?.value)?.coord?.value);
 
@@ -223,7 +213,7 @@ function fold(rows: readonly Binding[]): Enrichment {
     /* Largest reported enrolment: the smaller figures are usually one campus. */
     studentCount: students.length > 0 ? Math.max(...students) : null,
     logoUrl: logo ? commonsThumb(logo) : null,
-    heroImageUrl: image ? commonsThumb(image, 1200) : null,
+    heroImageUrl: heroImageFrom(image, 1200),
     motto: rows.find((row) => row.motto?.value)?.motto?.value ?? null,
     memberships,
     latitude: point?.latitude ?? null,
