@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Brackets, DataSource, Repository } from 'typeorm';
 
-import { PublishStatus } from '../../contract/enums';
+import { PublishStatus, StudyLevel } from '../../contract/enums';
 import { Article } from './entities/article.entity';
 import { Country } from './entities/country.entity';
 import { Course } from './entities/course.entity';
@@ -10,6 +10,7 @@ import { Institution } from './entities/institution.entity';
 import type {
   CountryCountDto,
   CountryDto,
+  CourseFacetDto,
   InstitutionListDto,
   InstitutionSummaryDto,
   ListInstitutionsQueryDto,
@@ -27,6 +28,16 @@ import type {
   ListArticlesQueryDto,
 } from './dto/article.dto';
 import type { HighlightSegmentDto, SearchResponseDto, SearchResultDto } from './dto/search.dto';
+
+/**
+ * What `/institutions/:slug` answers with: the record, plus the counts its
+ * page needs before it can offer any filter over the university's courses.
+ */
+export type InstitutionDetail = Institution & {
+  courseCount: number;
+  courseLevels: CourseFacetDto[];
+  courseDisciplines: CourseFacetDto[];
+};
 
 /** Below this, a query matches most of the catalogue and ranks nothing. */
 const MIN_QUERY_LENGTH = 2;
@@ -196,7 +207,7 @@ export class CatalogueService {
     };
   }
 
-  async institutionBySlug(slug: string): Promise<Institution & { courseCount: number }> {
+  async institutionBySlug(slug: string): Promise<InstitutionDetail> {
     const found = await this.institutions.findOne({
       where: { slug, status: PublishStatus.Published },
     });
@@ -210,7 +221,63 @@ export class CatalogueService {
       where: { institutionId: found.id, status: PublishStatus.Published },
     });
 
-    return { ...found, highlights: this.highlightsFor(found), courseCount };
+    /*
+     * The filters the page can offer, drawn from the courses this university
+     * actually has — a university teaching no archaeology must not be able to
+     * offer an archaeology filter. Most institutions have no courses at all,
+     * and those pay for neither query.
+     */
+    const [courseLevels, courseDisciplines] =
+      courseCount > 0
+        ? await Promise.all([this.levelFacets(found.id), this.disciplineFacets(found.id)])
+        : [[], []];
+
+    return {
+      ...found,
+      highlights: this.highlightsFor(found),
+      courseCount,
+      courseLevels,
+      courseDisciplines,
+    };
+  }
+
+  /**
+   * Levels in teaching order, not count order.
+   *
+   * These render as tabs, and tabs that reorder themselves from one university
+   * to the next cannot be learned — "Postgraduate" has to stay where the
+   * visitor last saw it.
+   */
+  private async levelFacets(institutionId: string): Promise<CourseFacetDto[]> {
+    const rows = (await this.courses.query(
+      `SELECT level AS value, count(*)::int AS count
+         FROM courses
+        WHERE "institutionId" = $1 AND status = $2
+        GROUP BY level`,
+      [institutionId, PublishStatus.Published],
+    )) as CourseFacetDto[];
+
+    const order = Object.values(StudyLevel) as string[];
+    return rows.sort((a, b) => order.indexOf(a.value) - order.indexOf(b.value));
+  }
+
+  /**
+   * Disciplines, most-taught first.
+   *
+   * A course carries one or two of them, so these are counted over the
+   * unnested array rather than the rows: summing them exceeds courseCount, and
+   * that is correct — 63 business courses and 55 mathematics ones overlap in
+   * the joint degrees.
+   */
+  private async disciplineFacets(institutionId: string): Promise<CourseFacetDto[]> {
+    return (await this.courses.query(
+      `SELECT d AS value, count(*)::int AS count
+         FROM courses c, unnest(c.disciplines) AS d
+        WHERE c."institutionId" = $1 AND c.status = $2
+        GROUP BY d
+        ORDER BY count(*) DESC, d ASC`,
+      [institutionId, PublishStatus.Published],
+    )) as CourseFacetDto[];
   }
 
   /**

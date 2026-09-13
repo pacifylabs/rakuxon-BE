@@ -65,6 +65,42 @@ describe('catalogue institutions', () => {
     });
   });
 
+  describe('course filters', () => {
+    beforeAll(async () => {
+      await dataSource.query(`
+        UPDATE courses SET disciplines = '{data-sciences-and-big-data,statistics}'
+          WHERE slug = 'probe-course-1';
+        UPDATE courses SET disciplines = '{archaeology}' WHERE slug = 'probe-course-2';
+      `);
+    });
+
+    afterAll(async () => {
+      await dataSource.query(
+        `UPDATE courses SET disciplines = '{}' WHERE slug IN ('probe-course-1','probe-course-2')`,
+      );
+    });
+
+    it('counts levels and disciplines from published courses only', async () => {
+      // probe-course-2 is a draft at the same university. Counting it would
+      // offer an archaeology filter that returns an empty list.
+      const { body } = await get('/institutions/probe-manchester').expect(200);
+
+      expect(body.courseLevels).toEqual([{ value: 'postgraduate', count: 1 }]);
+      expect(body.courseDisciplines).toEqual([
+        { value: 'data-sciences-and-big-data', count: 1 },
+        { value: 'statistics', count: 1 },
+      ]);
+    });
+
+    it('offers no filters for a university with no courses', async () => {
+      const { body } = await get('/institutions/probe-leeds').expect(200);
+
+      expect(body.courseCount).toBe(0);
+      expect(body.courseLevels).toEqual([]);
+      expect(body.courseDisciplines).toEqual([]);
+    });
+  });
+
   describe('countries', () => {
     it('counts only published institutions', async () => {
       const { body } = await get('/countries').expect(200);

@@ -60,6 +60,18 @@ export class InstitutionListDto {
   @ApiProperty() pageCount!: number;
 }
 
+/**
+ * One value of a course filter, with how many courses carry it.
+ *
+ * The count travels with the value because a filter that leads to an empty
+ * list is worse than no filter: "Archaeology (47)" is a decision a visitor can
+ * make, "Archaeology" is a guess they find out about after the click.
+ */
+export class CourseFacetDto {
+  @ApiProperty({ example: 'business' }) value!: string;
+  @ApiProperty({ example: 63 }) count!: number;
+}
+
 /** One row of the country menu. */
 export class CountryCountDto {
   @ApiProperty({ example: 'GB' }) countryCode!: string;

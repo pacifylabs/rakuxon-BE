@@ -2,6 +2,7 @@ import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { CatalogueService } from './catalogue.service';
+import type { InstitutionDetail } from './catalogue.service';
 import {
   CountryCountDto,
   CountryDto,
@@ -86,7 +87,7 @@ export class CatalogueController {
   @ApiOperation({ summary: 'One university' })
   @ApiOkResponse({ type: Institution })
   @ApiNotFoundResponse({ description: 'No published university with that slug.' })
-  institution(@Param('slug') slug: string): Promise<Institution & { courseCount: number }> {
+  institution(@Param('slug') slug: string): Promise<InstitutionDetail> {
     return this.catalogue.institutionBySlug(slug);
   }
 
