@@ -6,6 +6,8 @@ const valid = {
   REDIS_URL: 'redis://localhost:6380',
   JWT_ACCESS_SECRET: 'a'.repeat(32),
   JWT_REFRESH_SECRET: 'b'.repeat(32),
+  ADMIN_JWT_ACCESS_SECRET: 'c'.repeat(32),
+  ADMIN_JWT_REFRESH_SECRET: 'd'.repeat(32),
   WEB_APP_URL: 'http://localhost:3000',
 };
 
