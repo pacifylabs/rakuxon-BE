@@ -43,6 +43,10 @@ services:
     env_file: ../.env.production
     environment:
       GIT_COMMIT_SHA: ${BE_SHA}
+      # Migrations own the production schema. Set here rather than in
+      # .env.production because `environment` overrides `env_file`, so a stale
+      # server-side value cannot switch schema synchronization back on.
+      DATABASE_SYNCHRONIZE: "false"
     healthcheck:
       test: [CMD, node, -e, "fetch('http://127.0.0.1:3001/v1/health').then(r=>r.json()).then(b=>{if(b.status!=='ok'||b.dependencies.database!=='up')process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 15s

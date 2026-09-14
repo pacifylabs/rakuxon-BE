@@ -20,7 +20,7 @@ Rakuxon follows the shared infrastructure convention used by Kudipot on `31.220.
 - API and migration containers join the existing `web` network to reach shared Postgres. Frontends remain on the project network. No application ports are published on the host.
 - `REDIS_URL` points to shared Redis database 15. The current API does not use Redis; reserve that logical database for future Rakuxon usage and add application-specific key prefixes before adding caching or queues.
 
-At the owner's request, `DATABASE_SYNCHRONIZE=true` remains enabled. The application database owner can alter its own schema. Synchronization can remove columns and data; switch to migration-only schema changes before retaining valuable production data. Application rollback does not reverse database changes.
+Schema synchronization is off in production. `ops/compose.yml` sets `DATABASE_SYNCHRONIZE: "false"` on the API service, which overrides whatever `.env.production` holds, so every schema change ships as a migration and `ops/deploy.sh` applies it before the new API starts. Synchronization could remove columns and data, which the imported catalogue and student records cannot survive. `test/e2e/migrations-match-entities.e2e-spec.ts` fails CI when an entity changes without a matching migration. Application rollback does not reverse database changes.
 
 ## Deployment
 

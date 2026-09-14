@@ -49,7 +49,11 @@ export class Course {
   @Column({ type: 'uuid' })
   institutionId!: string;
 
-  @ManyToOne(() => Institution, { onDelete: 'CASCADE' })
+  /* The constraint is the class-level @ForeignKey, which carries the name the
+     Catalogue migration gave it. Left to itself, this relation would declare a
+     second, identical key under a generated name, which synchronization then
+     created alongside the first. */
+  @ManyToOne(() => Institution, { onDelete: 'CASCADE', createForeignKeyConstraints: false })
   @JoinColumn({ name: 'institutionId' })
   institution?: Institution;
 
