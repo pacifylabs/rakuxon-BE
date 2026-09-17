@@ -1,9 +1,13 @@
 import 'dotenv/config';
 
+import { appendFile, mkdir } from 'node:fs/promises';
+import path from 'node:path';
+
 import { DataSource, IsNull } from 'typeorm';
 
 import { buildDataSourceOptions } from '../src/database/data-source';
 import { commonsThumb, heroImageFrom } from './lib/commons-image';
+import { checkLocation } from './lib/location-check';
 import { connectWithRetry, withReconnect } from './lib/resilient-db';
 import { Institution } from '../src/modules/catalogue/entities/institution.entity';
 
@@ -52,6 +56,8 @@ interface Binding {
   coord?: { value: string };
   memberLabel?: { value: string };
   motto?: { value: string };
+  countryCode?: { value: string };
+  countryLabel?: { value: string };
 }
 
 /**
@@ -88,7 +94,7 @@ function buildQuery(ids: readonly string[]): string {
   const values = ids.map((id) => `"${id}"`).join(' ');
 
   return `
-    SELECT ?ror ?item ?desc ?inception ?students ?logo ?enwiki ?image ?coord ?memberLabel ?motto WHERE {
+    SELECT ?ror ?item ?desc ?inception ?students ?logo ?enwiki ?image ?coord ?memberLabel ?motto ?countryCode ?countryLabel WHERE {
       VALUES ?ror { ${values} }
       ?item wdt:P6782 ?ror .
       OPTIONAL { ?item wdt:P571 ?inception }
@@ -100,6 +106,7 @@ function buildQuery(ids: readonly string[]): string {
       OPTIONAL { ?item wdt:P1451 ?motto FILTER(LANG(?motto) = "en") }
       OPTIONAL { ?enwiki schema:about ?item ; schema:isPartOf <https://en.wikipedia.org/> }
       OPTIONAL { ?item schema:description ?desc FILTER(LANG(?desc) = "en") }
+      OPTIONAL { ?item wdt:P17 ?country . ?country wdt:P297 ?countryCode }
       SERVICE wikibase:label { bd:serviceParam wikibase:language "en" }
     }`;
 }
@@ -139,6 +146,10 @@ interface Enrichment {
   longitude: string | null;
   /** Carried between the two passes, not a column. */
   wikipediaTitle: string | null;
+  /** Carried into the location cross-check below, not written directly —
+      see `correctLocation`. */
+  wikidataCountryCode: string | null;
+  wikidataCountryName: string | null;
 }
 
 /** "Point(-1.930555 52.450555)" -> longitude, latitude. Note the order. */
@@ -207,6 +218,13 @@ function fold(rows: readonly Binding[]): Enrichment {
     ),
   ].sort();
 
+  /* P17 (country) can carry more than one value for an institution with a
+     complicated history (a predecessor state, a territory that changed
+     hands) — same "rows returns a row per combination" reasoning as above.
+     The first one Wikidata lists is the one query.wikidata.org itself
+     returns as the country's current, primary claim. */
+  const countryRow = rows.find((row) => row.countryCode?.value);
+
   return {
     about: rows.find((row) => row.desc?.value)?.desc?.value ?? null,
     foundedYear: years.length > 0 ? Math.min(...years) : null,
@@ -220,6 +238,8 @@ function fold(rows: readonly Binding[]): Enrichment {
     longitude: point?.longitude ?? null,
     wikipediaTitle: wikipediaTitle(rows.find((row) => row.enwiki?.value)?.enwiki?.value),
     wikidataId: rows[0]?.item?.value?.split('/').pop() ?? null,
+    wikidataCountryCode: countryRow?.countryCode?.value?.toUpperCase() ?? null,
+    wikidataCountryName: countryRow?.countryLabel?.value ?? null,
   };
 }
 
@@ -283,6 +303,19 @@ async function fetchOverviews(titles: readonly string[]): Promise<Map<string, st
   return found;
 }
 
+/**
+ * One line per correction, appended as the run goes rather than held in
+ * memory — this runs across thousands of rows, and a report is worth having
+ * even if the process is killed partway through. `.log` so it falls under
+ * the repo's existing `*.log` gitignore rule without a new one.
+ */
+async function prepareLocationReport(): Promise<string> {
+  const dir = path.join(__dirname, 'reports');
+  await mkdir(dir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  return path.join(dir, `location-corrections-${stamp}.log`);
+}
+
 async function main(): Promise<void> {
   const recheck = process.argv.includes('--recheck');
   const dataSource = new DataSource(buildDataSourceOptions());
@@ -293,7 +326,7 @@ async function main(): Promise<void> {
     const pending = await withReconnect(dataSource, () =>
       repo.find({
         where: recheck ? {} : { enrichedAt: IsNull() },
-        select: { id: true, sourceUrl: true },
+        select: { id: true, sourceUrl: true, slug: true, countryCode: true, country: true },
         order: { name: 'ASC' },
       }),
     );
@@ -301,12 +334,16 @@ async function main(): Promise<void> {
     const withSource = pending.filter((row) => row.sourceUrl);
     process.stdout.write(`${withSource.length} institutions to enrich\n`);
 
+    const reportPath = await prepareLocationReport();
+    process.stdout.write(`Location corrections, if any, are logged to ${reportPath}\n`);
+
     let matched = 0;
     let described = 0;
+    let locationCorrected = 0;
 
     for (let index = 0; index < withSource.length; index += BATCH_SIZE) {
       const batch = withSource.slice(index, index + BATCH_SIZE);
-      const byRor = new Map(batch.map((row) => [rorId(row.sourceUrl as string), row.id]));
+      const byRor = new Map(batch.map((row) => [rorId(row.sourceUrl as string), row]));
 
       let bindings: Binding[] = [];
       try {
@@ -358,21 +395,52 @@ async function main(): Promise<void> {
         }
       }
 
-      for (const [ror, id] of byRor) {
+      for (const [ror, row] of byRor) {
         const values = folded.get(ror);
-        /* wikipediaTitle is how the two passes talk to each other, not a
-           column — it must not reach the update or TypeORM writes a field the
-           table does not have. */
-        const { wikipediaTitle: title, ...columns } = values ?? { wikipediaTitle: null };
+        /*
+         * wikipediaTitle, wikidataCountryCode and wikidataCountryName are how
+         * this pass talks to itself — the overview lookup and the location
+         * cross-check just below — not columns. Each must be stripped before
+         * the object reaches `repo.update`, or TypeORM tries to write a field
+         * the table does not have.
+         */
+        const {
+          wikipediaTitle: title,
+          wikidataCountryCode,
+          wikidataCountryName,
+          ...columns
+        } = values ?? {
+          wikipediaTitle: null,
+          wikidataCountryCode: null,
+          wikidataCountryName: null,
+        };
         const overview = title ? (overviews.get(title) ?? null) : null;
+
+        const correction = checkLocation(
+          { countryCode: row.countryCode, country: row.country },
+          { countryCode: wikidataCountryCode, countryName: wikidataCountryName },
+        );
+        if (correction) {
+          locationCorrected += 1;
+          await appendFile(
+            reportPath,
+            `${JSON.stringify({
+              id: row.id,
+              slug: row.slug,
+              from: { countryCode: row.countryCode, country: row.country },
+              to: correction,
+            })}\n`,
+          );
+        }
 
         /*
          * Rows with no Wikidata match are stamped too. Otherwise every run
          * retries the same misses forever and never reaches new records.
          */
         await withReconnect(dataSource, () =>
-          repo.update(id, {
+          repo.update(row.id, {
             ...columns,
+            ...correction,
             overview,
             overviewSourceUrl: overview && title ? articleUrl(title) : null,
             enrichedAt: stamped,
@@ -384,7 +452,7 @@ async function main(): Promise<void> {
       }
 
       process.stdout.write(
-        `  ${Math.min(index + BATCH_SIZE, withSource.length)}/${withSource.length} — ${matched} matched, ${described} with an overview\n`,
+        `  ${Math.min(index + BATCH_SIZE, withSource.length)}/${withSource.length} — ${matched} matched, ${described} with an overview, ${locationCorrected} location correction(s)\n`,
       );
 
       /* The public endpoint is shared infrastructure; do not hammer it. */
@@ -392,7 +460,8 @@ async function main(): Promise<void> {
     }
 
     process.stdout.write(
-      `\nEnriched ${matched} of ${withSource.length}; ${described} have an overview.\n`,
+      `\nEnriched ${matched} of ${withSource.length}; ${described} have an overview; ` +
+        `${locationCorrected} location correction(s) — see ${reportPath}.\n`,
     );
   } finally {
     await dataSource.destroy();

@@ -48,6 +48,21 @@ export enum StudyLevel {
   Research = 'research',
 }
 
+/**
+ * What a student has already completed, on one entry of their education
+ * history. Deliberately separate from `StudyLevel`: that enum is what a
+ * *course* is taught at, and a course can never be "at secondary level" in
+ * this catalogue — merging the two would let a bad value leak across a
+ * boundary that should stay firm.
+ */
+export enum QualificationLevel {
+  Secondary = 'secondary',
+  Foundation = 'foundation',
+  Undergraduate = 'undergraduate',
+  Postgraduate = 'postgraduate',
+  Research = 'research',
+}
+
 export enum StudyMode {
   FullTime = 'full_time',
   PartTime = 'part_time',
@@ -76,6 +91,10 @@ export enum DocumentType {
   Medical = 'medical',
   SecondaryMarksheet = 'secondary_marksheet',
   SeniorSecondaryMarksheet = 'senior_secondary_marksheet',
+  AcademicTranscript = 'academic_transcript',
+  CvResume = 'cv_resume',
+  RecommendationLetter = 'recommendation_letter',
+  ResearchProposal = 'research_proposal',
 }
 
 export enum DocumentStatus {

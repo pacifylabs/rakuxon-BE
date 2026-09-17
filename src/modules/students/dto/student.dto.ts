@@ -14,7 +14,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 
-import { StudyLevel } from '../../../contract/enums';
+import { QualificationLevel, StudyLevel } from '../../../contract/enums';
 
 const CURRENT_YEAR = new Date().getFullYear();
 
@@ -66,6 +66,11 @@ export class EducationHistoryEntryDto {
   @IsString()
   @MaxLength(200)
   qualification!: string;
+
+  @ApiProperty({ required: false, enum: QualificationLevel, enumName: 'QualificationLevel' })
+  @IsOptional()
+  @IsEnum(QualificationLevel)
+  level?: QualificationLevel;
 
   @ApiProperty({ required: false })
   @IsOptional()

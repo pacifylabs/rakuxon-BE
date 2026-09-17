@@ -118,6 +118,32 @@ describe('catalogue institutions', () => {
     });
   });
 
+  describe('homepage featured', () => {
+    afterEach(async () => {
+      await dataSource.query('UPDATE institutions SET "homepageFeaturedOrder" = NULL');
+    });
+
+    it('returns nothing when no institution is featured', async () => {
+      const { body } = await get('/institutions?featured=true').expect(200);
+      expect(body.items).toHaveLength(0);
+    });
+
+    it('returns only featured institutions, in their set order, with a hero image where Wikidata covers it', async () => {
+      await dataSource.query(`
+        UPDATE institutions SET "homepageFeaturedOrder" = 2 WHERE slug = 'probe-manchester';
+        UPDATE institutions SET "homepageFeaturedOrder" = 1, "heroImageUrl" = 'https://example.com/leeds.jpg' WHERE slug = 'probe-leeds';
+      `);
+
+      const { body } = await get('/institutions?featured=true').expect(200);
+
+      expect(body.items.map((row: { slug: string }) => row.slug)).toEqual([
+        'probe-leeds',
+        'probe-manchester',
+      ]);
+      expect(body.items[0].heroImageUrl).toBe('https://example.com/leeds.jpg');
+    });
+  });
+
   describe('listing', () => {
     it('filters by country', async () => {
       const { body } = await get('/institutions?country=CA').expect(200);

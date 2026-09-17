@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { DataSource } from 'typeorm';
+import { SchemaOwnedByMigrations1757002000000 } from '../../src/database/migrations/1757002000000-SchemaOwnedByMigrations';
 
 import { adminDataSource, closeAdminDataSource } from '../helpers/admin-data-source';
 
@@ -46,13 +47,17 @@ describe('production schema', () => {
      * sync create, synchronize, migrate again — and require the same end state
      * as a clean build.
      */
-    await db.undoLastMigration();
+    const migration = new SchemaOwnedByMigrations1757002000000();
+    const runner = db.createQueryRunner();
+    await runner.connect();
+    await migration.down(runner);
     await db.query(
       `ALTER TABLE "courses" ADD CONSTRAINT "FK_477dfb3469de6ce682f3339eb8f"
        FOREIGN KEY ("institutionId") REFERENCES "institutions"("id") ON DELETE CASCADE`,
     );
     await db.synchronize();
-    await db.runMigrations();
+    await migration.up(runner);
+    await runner.release();
 
     const keys = await db.query<{ conname: string }[]>(
       `SELECT conname FROM pg_constraint WHERE conrelid = 'courses'::regclass AND contype = 'f'`,

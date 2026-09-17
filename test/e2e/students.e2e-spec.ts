@@ -158,5 +158,35 @@ describe('students', () => {
         .send({ educationHistory: [{ startYear: 'not-a-year' }] })
         .expect(400);
     });
+
+    it('round-trips a secondary qualification level on an education history entry', async () => {
+      const { accessToken: token } = await registerStudent();
+
+      const updated = await request(app.getHttpServer())
+        .patch('/v1/students/me')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          educationHistory: [
+            { institutionName: 'Lagos High School', qualification: 'WAEC', level: 'secondary' },
+          ],
+        })
+        .expect(200);
+
+      expect(updated.body.educationHistory).toEqual([
+        expect.objectContaining({ qualification: 'WAEC', level: 'secondary' }),
+      ]);
+    });
+
+    it('rejects a qualification level outside the enum', async () => {
+      await request(app.getHttpServer())
+        .patch('/v1/students/me')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          educationHistory: [
+            { institutionName: 'Lagos High School', qualification: 'WAEC', level: 'phd' },
+          ],
+        })
+        .expect(400);
+    });
   });
 });

@@ -7,6 +7,7 @@ import { Article } from './entities/article.entity';
 import { Country } from './entities/country.entity';
 import { Course } from './entities/course.entity';
 import { Institution } from './entities/institution.entity';
+import { IntakeTerm } from './entities/intake-term.entity';
 
 describe('AdminCatalogueService: countries', () => {
   const countries = {
@@ -27,6 +28,7 @@ describe('AdminCatalogueService: countries', () => {
         { provide: getRepositoryToken(Course), useValue: {} },
         { provide: getRepositoryToken(Article), useValue: {} },
         { provide: getRepositoryToken(Country), useValue: countries },
+        { provide: getRepositoryToken(IntakeTerm), useValue: {} },
       ],
     }).compile();
 

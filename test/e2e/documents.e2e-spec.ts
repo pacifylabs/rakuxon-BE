@@ -88,6 +88,28 @@ describe('documents', () => {
         .send({ type: 'not-a-real-type', filename: 'passport.pdf' })
         .expect(400);
     });
+
+    it('accepts the document types added for the client-requested categories', async () => {
+      const newTypes: DocumentType[] = [
+        DocumentType.AcademicTranscript,
+        DocumentType.CvResume,
+        DocumentType.RecommendationLetter,
+        DocumentType.ResearchProposal,
+      ];
+
+      for (const type of newTypes) {
+        const res = await request(app.getHttpServer())
+          .post('/v1/documents/upload-signature')
+          .set('Authorization', `Bearer ${accessToken}`)
+          .send({ type, filename: 'file.pdf' })
+          .expect(400);
+
+        /* A single string here means it reached the Cloudinary-not-configured
+           path, not class-validator's "must be a valid enum value" rejection
+           — proof the type itself validated. */
+        expect(typeof res.body.message).toBe('string');
+      }
+    });
   });
 
   /*

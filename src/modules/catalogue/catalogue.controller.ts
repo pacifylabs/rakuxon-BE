@@ -11,6 +11,7 @@ import {
 } from './dto/institution.dto';
 import { ArticleDetailDto, ArticleListDto, ListArticlesQueryDto } from './dto/article.dto';
 import { CourseDetailDto, CourseListDto, ListCoursesQueryDto } from './dto/course.dto';
+import { IntakeTermDto } from './dto/intake-term.dto';
 import { SearchQueryDto, SearchResponseDto } from './dto/search.dto';
 import { Institution } from './entities/institution.entity';
 import { Public } from '../../common/auth/public.decorator';
@@ -50,8 +51,8 @@ export class CatalogueController {
   @Get('countries')
   @ApiOperation({ summary: 'Destinations with a published institution count' })
   @ApiOkResponse({ type: [CountryCountDto] })
-  countries(): Promise<CountryCountDto[]> {
-    return this.catalogue.countries();
+  countries(@Query('featured') featured?: string): Promise<CountryCountDto[]> {
+    return this.catalogue.countries(featured === 'true');
   }
 
   /**
@@ -65,6 +66,15 @@ export class CatalogueController {
   @ApiOkResponse({ type: [CountryDto] })
   referenceCountries(): Promise<CountryDto[]> {
     return this.catalogue.referenceCountries();
+  }
+
+  /** Active options for the preferred-intake dropdown, in their set order. */
+  @Public()
+  @Get('intake-terms')
+  @ApiOperation({ summary: 'Preferred-intake dropdown options' })
+  @ApiOkResponse({ type: [IntakeTermDto] })
+  intakeTerms(): Promise<IntakeTermDto[]> {
+    return this.catalogue.intakeTermsList();
   }
 
   @Public()

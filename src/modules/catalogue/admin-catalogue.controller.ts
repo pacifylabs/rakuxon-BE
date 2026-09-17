@@ -19,10 +19,12 @@ import {
   ListAdminArticlesQueryDto,
   ListAdminCoursesQueryDto,
   ListAdminInstitutionsQueryDto,
+  SetCountryHomepageFeaturedDto,
   UpdateArticleDto,
   UpdateCourseDto,
   UpdateInstitutionDto,
 } from './dto/admin-catalogue.dto';
+import { AdminIntakeTermDto, CreateIntakeTermDto, UpdateIntakeTermDto } from './dto/intake-term.dto';
 import { AdminJwtAuthGuard } from '../../common/auth/admin-jwt-auth.guard';
 import { Public } from '../../common/auth/public.decorator';
 import { PermissionGuard } from '../../common/rbac/permission.guard';
@@ -287,5 +289,45 @@ export class AdminCatalogueController {
   @ApiNotFoundResponse({ description: 'No country with that code.' })
   deactivateCountry(@Param('code') code: string): Promise<AdminCountryDto> {
     return this.catalogue.setCountryDestination(code, false);
+  }
+
+  @Patch('countries/:code/homepage-featured')
+  @RequirePermission('catalogue.publish')
+  @ApiOperation({ summary: 'Set or clear a country\'s position in the homepage destinations row' })
+  @ApiOkResponse({ type: AdminCountryDto })
+  @ApiNotFoundResponse({ description: 'No country with that code.' })
+  setCountryHomepageFeatured(
+    @Param('code') code: string,
+    @Body() dto: SetCountryHomepageFeaturedDto,
+  ): Promise<AdminCountryDto> {
+    return this.catalogue.setCountryHomepageFeatured(code, dto.homepageFeaturedOrder);
+  }
+
+  @Get('intake-terms')
+  @RequirePermission('catalogue.view')
+  @ApiOperation({ summary: 'Every intake term, including inactive ones' })
+  @ApiOkResponse({ type: [AdminIntakeTermDto] })
+  listIntakeTerms(): Promise<AdminIntakeTermDto[]> {
+    return this.catalogue.listIntakeTerms();
+  }
+
+  @Post('intake-terms')
+  @RequirePermission('catalogue.publish')
+  @ApiOperation({ summary: 'Add a new intake term' })
+  @ApiCreatedResponse({ type: AdminIntakeTermDto })
+  createIntakeTerm(@Body() dto: CreateIntakeTermDto): Promise<AdminIntakeTermDto> {
+    return this.catalogue.createIntakeTerm(dto);
+  }
+
+  @Patch('intake-terms/:id')
+  @RequirePermission('catalogue.publish')
+  @ApiOperation({ summary: 'Edit, activate or deactivate an intake term' })
+  @ApiOkResponse({ type: AdminIntakeTermDto })
+  @ApiNotFoundResponse({ description: 'No intake term with that id.' })
+  updateIntakeTerm(
+    @Param('id') id: string,
+    @Body() dto: UpdateIntakeTermDto,
+  ): Promise<AdminIntakeTermDto> {
+    return this.catalogue.updateIntakeTerm(id, dto);
   }
 }

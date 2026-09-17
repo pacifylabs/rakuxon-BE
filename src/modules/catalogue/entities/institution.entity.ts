@@ -15,6 +15,7 @@ import type { Campus, EnglishTest, Faq, QualityRating, RequirementGroup } from '
  * which is the network asset the platform is built on.
  */
 @Entity('institutions')
+@Index('institutions_homepage_featured_idx', { synchronize: false })
 @Index('institutions_search_idx', { synchronize: false })
 @Index('institutions_name_trgm_idx', { synchronize: false })
 @Index('institutions_browse_idx', { synchronize: false })
@@ -159,6 +160,10 @@ export class Institution {
   /** A partner that returns decisions quickly. Our term, deliberately. */
   @Column({ type: 'boolean', default: false })
   fastTrackOffer!: boolean;
+
+  /** Null: not shown in the homepage showcase. A number: its position there. */
+  @Column({ type: 'int', nullable: true })
+  homepageFeaturedOrder!: number | null;
 
   @Column({ type: 'enum', enum: PublishStatus, enumName: 'publish_status_enum', default: PublishStatus.Draft })
   status!: PublishStatus;

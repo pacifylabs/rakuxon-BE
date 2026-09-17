@@ -20,11 +20,13 @@ import {
   UpdateCourseDto,
   UpdateInstitutionDto,
 } from './dto/admin-catalogue.dto';
+import type { AdminIntakeTermDto, CreateIntakeTermDto, UpdateIntakeTermDto } from './dto/intake-term.dto';
 import { definedEntries } from '../../common/utils/defined-entries';
 import { Article } from './entities/article.entity';
 import { Country } from './entities/country.entity';
 import { Course } from './entities/course.entity';
 import { Institution } from './entities/institution.entity';
+import { IntakeTerm } from './entities/intake-term.entity';
 import { PublishStatus } from '../../contract/enums';
 
 interface Paged<T> {
@@ -49,7 +51,32 @@ export class AdminCatalogueService {
     @InjectRepository(Course) private readonly courses: Repository<Course>,
     @InjectRepository(Article) private readonly articles: Repository<Article>,
     @InjectRepository(Country) private readonly countries: Repository<Country>,
+    @InjectRepository(IntakeTerm) private readonly intakeTerms: Repository<IntakeTerm>,
   ) {}
+
+  async listIntakeTerms(): Promise<AdminIntakeTermDto[]> {
+    const rows = await this.intakeTerms.find({ order: { sortOrder: 'ASC' } });
+    return rows.map((row) => this.toIntakeTerm(row));
+  }
+
+  async createIntakeTerm(dto: CreateIntakeTermDto): Promise<AdminIntakeTermDto> {
+    const saved = await this.intakeTerms.save(
+      this.intakeTerms.create({ label: dto.label, sortOrder: dto.sortOrder ?? 0 }),
+    );
+    return this.toIntakeTerm(saved);
+  }
+
+  async updateIntakeTerm(id: string, dto: UpdateIntakeTermDto): Promise<AdminIntakeTermDto> {
+    const row = await this.intakeTerms.findOne({ where: { id } });
+    if (!row) throw new NotFoundException('No intake term with that id.');
+
+    const saved = await this.intakeTerms.save({ ...row, ...definedEntries(dto) });
+    return this.toIntakeTerm(saved);
+  }
+
+  private toIntakeTerm(row: IntakeTerm): AdminIntakeTermDto {
+    return { id: row.id, label: row.label, sortOrder: row.sortOrder, active: row.active };
+  }
 
   async listInstitutions(query: ListAdminInstitutionsQueryDto): Promise<Paged<AdminInstitutionSummaryDto>> {
     const page = query.page ?? 1;
@@ -320,7 +347,23 @@ export class AdminCatalogueService {
       name: row.name,
       isDestination: row.isDestination,
       flagEmoji: row.flagEmoji,
+      homepageFeaturedOrder: row.homepageFeaturedOrder,
     }));
+  }
+
+  async setCountryHomepageFeatured(code: string, homepageFeaturedOrder: number | null): Promise<AdminCountryDto> {
+    const row = await this.countries.findOne({ where: { code } });
+    if (!row) throw new NotFoundException('No country with that code.');
+
+    row.homepageFeaturedOrder = homepageFeaturedOrder;
+    const saved = await this.countries.save(row);
+    return {
+      code: saved.code,
+      name: saved.name,
+      isDestination: saved.isDestination,
+      flagEmoji: saved.flagEmoji,
+      homepageFeaturedOrder: saved.homepageFeaturedOrder,
+    };
   }
 
   async setCountryDestination(code: string, isDestination: boolean): Promise<AdminCountryDto> {
@@ -404,6 +447,7 @@ export class AdminCatalogueService {
       tuitionCurrency: row.tuitionCurrency,
       upcomingIntake: row.upcomingIntake,
       fastTrackOffer: row.fastTrackOffer,
+      homepageFeaturedOrder: row.homepageFeaturedOrder,
       status: row.status,
     };
   }

@@ -189,6 +189,15 @@ export class AdminCountryDto {
   @ApiProperty({ example: 'United Kingdom' }) name!: string;
   @ApiProperty() isDestination!: boolean;
   @ApiProperty({ example: '🇬🇧' }) flagEmoji!: string;
+  @ApiPropertyOptional({ type: Number, nullable: true, description: 'Null: not on the homepage. A number: its position there.' })
+  homepageFeaturedOrder?: number | null;
+}
+
+export class SetCountryHomepageFeaturedDto {
+  @ApiProperty({ type: Number, nullable: true })
+  @IsOptional()
+  @IsInt()
+  homepageFeaturedOrder!: number | null;
 }
 
 /* ------------------------------------------------------------- authoring */
@@ -279,6 +288,8 @@ export class AdminInstitutionDetailDto {
   @ApiPropertyOptional({ type: String, nullable: true }) tuitionCurrency!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) upcomingIntake!: string | null;
   @ApiProperty() fastTrackOffer!: boolean;
+  @ApiPropertyOptional({ type: Number, nullable: true, description: 'Null: not in the homepage showcase. A number: its position there.' })
+  homepageFeaturedOrder!: number | null;
   @ApiProperty({ enum: PublishStatus, enumName: 'PublishStatus' }) status!: PublishStatus;
 }
 
@@ -310,6 +321,7 @@ export class UpdateInstitutionDto {
   @ApiPropertyOptional({ type: String, nullable: true, example: 'GBP' }) @IsOptional() @IsString() @Length(3, 3) tuitionCurrency?: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) @IsOptional() @IsString() upcomingIntake?: string | null;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() fastTrackOffer?: boolean;
+  @ApiPropertyOptional({ type: Number, nullable: true }) @IsOptional() @IsInt() homepageFeaturedOrder?: number | null;
 }
 
 export class CreateInstitutionDto {

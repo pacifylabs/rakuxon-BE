@@ -7,6 +7,7 @@ import { Article } from './entities/article.entity';
 import { Country } from './entities/country.entity';
 import { Course } from './entities/course.entity';
 import { Institution } from './entities/institution.entity';
+import { IntakeTerm } from './entities/intake-term.entity';
 import type {
   CountryCountDto,
   CountryDto,
@@ -28,6 +29,7 @@ import type {
   ListArticlesQueryDto,
 } from './dto/article.dto';
 import type { HighlightSegmentDto, SearchResponseDto, SearchResultDto } from './dto/search.dto';
+import type { IntakeTermDto } from './dto/intake-term.dto';
 
 /**
  * What `/institutions/:slug` answers with: the record, plus the counts its
@@ -61,7 +63,14 @@ export class CatalogueService {
     @InjectRepository(Course) private readonly courses: Repository<Course>,
     @InjectRepository(Article) private readonly articles: Repository<Article>,
     @InjectRepository(Country) private readonly countryRepo: Repository<Country>,
+    @InjectRepository(IntakeTerm) private readonly intakeTerms: Repository<IntakeTerm>,
   ) {}
+
+  /** Active intake terms, in their set order — the preferred-intake dropdown's options. */
+  async intakeTermsList(): Promise<IntakeTermDto[]> {
+    const rows = await this.intakeTerms.find({ where: { active: true }, order: { sortOrder: 'ASC' } });
+    return rows.map((row) => ({ id: row.id, label: row.label }));
+  }
 
   /**
    * The full reference list, for a profile or address form's dropdown — as
@@ -85,18 +94,34 @@ export class CatalogueService {
    * cannot advertise 456 universities and then show an empty page — which is
    * what happens when a menu is hard-coded beside a filtered list.
    */
-  async countries(): Promise<CountryCountDto[]> {
-    const rows = (await this.institutions
+  async countries(featured?: boolean): Promise<CountryCountDto[]> {
+    const builder = this.institutions
       .createQueryBuilder('i')
       .select('i.countryCode', 'countryCode')
       .addSelect('MIN(i.country)', 'country')
       .addSelect('COUNT(*)::int', 'institutions')
       .where('i.status = :status', { status: PublishStatus.Published })
-      .groupBy('i.countryCode')
-      .orderBy('MIN(i.country)', 'ASC')
-      .getRawMany()) as CountryCountDto[];
+      .groupBy('i.countryCode');
 
-    return rows;
+    if (!featured) {
+      const rows = (await builder.orderBy('MIN(i.country)', 'ASC').getRawMany()) as CountryCountDto[];
+      return rows;
+    }
+
+    /* Featured reads want the flag and the admin-set order, so this joins the
+       countries reference table instead of the plain group-by above. MIN() on
+       both: they are single-valued per countryCode (the join is one row per
+       code), but Postgres cannot infer that from a different table's columns,
+       so they still have to be wrapped to satisfy GROUP BY. */
+    const rows = (await builder
+      .innerJoin(Country, 'c', 'c.code = i.countryCode')
+      .addSelect('MIN(c.flagEmoji)', 'flagEmoji')
+      .addSelect('MIN(c.homepageFeaturedOrder)', 'homepageFeaturedOrder')
+      .andWhere('c.homepageFeaturedOrder IS NOT NULL')
+      .orderBy('MIN(c.homepageFeaturedOrder)', 'ASC')
+      .getRawMany()) as (CountryCountDto & { homepageFeaturedOrder: number })[];
+
+    return rows.map(({ homepageFeaturedOrder: _order, ...rest }) => rest);
   }
 
   async listInstitutions(query: ListInstitutionsQueryDto): Promise<InstitutionListDto> {
@@ -126,10 +151,13 @@ export class CatalogueService {
       );
     }
 
-    builder
-      .orderBy(query.sort === 'city' ? 'i.city' : 'i.name', 'ASC')
-      .skip((page - 1) * limit)
-      .take(limit);
+    if (query.featured) {
+      builder.andWhere('i.homepageFeaturedOrder IS NOT NULL').orderBy('i.homepageFeaturedOrder', 'ASC');
+    } else {
+      builder.orderBy(query.sort === 'city' ? 'i.city' : 'i.name', 'ASC');
+    }
+
+    builder.skip((page - 1) * limit).take(limit);
 
     const [rows, total] = await builder.getManyAndCount();
 
@@ -403,6 +431,9 @@ export class CatalogueService {
       city: row.city ?? undefined,
       website: row.website ?? undefined,
       logoUrl: row.logoUrl ?? undefined,
+      heroImageUrl: row.heroImageUrl ?? undefined,
+      foundedYear: row.foundedYear ?? undefined,
+      studentCount: row.studentCount ?? undefined,
       fastTrackOffer: row.fastTrackOffer,
       courseCount,
     };

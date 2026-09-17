@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, Length, Max, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Length, Max, Min } from 'class-validator';
 
 export class ListInstitutionsQueryDto {
   @ApiPropertyOptional({ example: 'GB', description: 'ISO 3166-1 alpha-2.' })
@@ -14,6 +14,12 @@ export class ListInstitutionsQueryDto {
   @IsOptional()
   @IsString()
   q?: string;
+
+  @ApiPropertyOptional({ description: 'Only institutions featured on the homepage, in their set order.' })
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  featured?: boolean;
 
   @ApiPropertyOptional({ default: 1, minimum: 1 })
   @IsOptional()
@@ -48,6 +54,11 @@ export class InstitutionSummaryDto {
   @ApiPropertyOptional() website?: string;
   @ApiPropertyOptional({ description: 'Only where licensed; the flag is the fallback.' })
   logoUrl?: string;
+  @ApiPropertyOptional({ description: 'From Wikidata. Absent for institutions it does not cover.' })
+  heroImageUrl?: string;
+  @ApiPropertyOptional({ description: 'From Wikidata. Absent for institutions it does not cover.' })
+  foundedYear?: number;
+  @ApiPropertyOptional() studentCount?: number;
   @ApiProperty() fastTrackOffer!: boolean;
   @ApiProperty({ description: 'Published courses at this institution.' })
   courseCount!: number;
@@ -77,6 +88,8 @@ export class CountryCountDto {
   @ApiProperty({ example: 'GB' }) countryCode!: string;
   @ApiProperty({ example: 'United Kingdom' }) country!: string;
   @ApiProperty({ example: 456 }) institutions!: number;
+  @ApiPropertyOptional({ example: '🇬🇧', description: 'Only set when reading the featured list.' })
+  flagEmoji?: string;
 }
 
 /** One row of the full reference list, for a form dropdown. */

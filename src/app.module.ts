@@ -21,6 +21,7 @@ import { NotificationsInboxModule } from './modules/notifications-inbox/notifica
 import { OnboardingLinksModule } from './modules/onboarding-links/onboarding-links.module';
 import { StudentsModule } from './modules/students/students.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
+import { TestimonialsModule } from './modules/testimonials/testimonials.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { TenantsModule } from './modules/tenants/tenants.module';
     AdminsModule,
     TenantsModule,
     AdminDashboardModule,
+    TestimonialsModule,
   ],
   providers: [
     SyncIndexesService,

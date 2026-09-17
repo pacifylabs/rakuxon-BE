@@ -81,6 +81,30 @@ describe('admin: catalogue institutions authoring', () => {
     });
   });
 
+  it('sets and clears the homepage-featured position', async () => {
+    const { token } = await seedAdminSession(app, ['catalogue.view', 'catalogue.publish']);
+    const created = await request(app.getHttpServer())
+      .post('/v1/admin/catalogue/institutions')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ slug: uniqueSlug(), name: 'Featured U', country: 'United Kingdom', countryCode: 'GB' })
+      .expect(201);
+    expect(created.body.homepageFeaturedOrder).toBeNull();
+
+    const featured = await request(app.getHttpServer())
+      .patch(`/v1/admin/catalogue/institutions/${created.body.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ homepageFeaturedOrder: 1 })
+      .expect(200);
+    expect(featured.body.homepageFeaturedOrder).toBe(1);
+
+    const cleared = await request(app.getHttpServer())
+      .patch(`/v1/admin/catalogue/institutions/${created.body.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ homepageFeaturedOrder: null })
+      .expect(200);
+    expect(cleared.body.homepageFeaturedOrder).toBeNull();
+  });
+
   it('round-trips every jsonb array shape', async () => {
     const { token } = await seedAdminSession(app, ['catalogue.publish']);
     const created = await request(app.getHttpServer())

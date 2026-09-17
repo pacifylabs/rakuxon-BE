@@ -6,6 +6,7 @@ import { PublishStatus } from '../src/contract/enums';
 import { buildDataSourceOptions } from '../src/database/data-source';
 import { Institution } from '../src/modules/catalogue/entities/institution.entity';
 import { connectWithRetry, withReconnect } from './lib/resilient-db';
+import { primaryLocation } from './lib/ror';
 
 /**
  * Imports institutions from the Research Organization Registry.
@@ -218,7 +219,7 @@ async function importCountries(
     for (const org of items) {
       seen += 1;
       const name = displayName(org);
-      const location = org.locations?.[0]?.geonames_details;
+      const location = primaryLocation(org, countryCodes);
       if (!name || !org.id || !location?.country_code) continue;
       if (processed.has(org.id)) continue;
       if (!includeSchools && !HIGHER_ED.test(fold(name))) continue;
