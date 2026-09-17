@@ -111,10 +111,15 @@ describe('catalogue institutions', () => {
       expect(canada.institutions).toBe(1);
     });
 
-    it('is ordered by country name, so the menu is stable', async () => {
+    it('sorts a country with a published course before one without, then falls back to name', async () => {
       const { body } = await get('/countries').expect(200);
-      const names = body.map((row: { country: string }) => row.country);
-      expect(names).toEqual([...names].sort());
+      const codes = body.map((row: { countryCode: string }) => row.countryCode);
+
+      // GB has a published course (probe-manchester); CA does not — its only
+      // course belongs to the draft "Secret Academy", which doesn't count.
+      // GB sorts first even though "Canada" precedes "United Kingdom"
+      // alphabetically.
+      expect(codes.indexOf('GB')).toBeLessThan(codes.indexOf('CA'));
     });
   });
 

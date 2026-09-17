@@ -21,7 +21,9 @@ import { NotificationsInboxModule } from './modules/notifications-inbox/notifica
 import { OnboardingLinksModule } from './modules/onboarding-links/onboarding-links.module';
 import { StudentsModule } from './modules/students/students.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
+import { ServicesModule } from './modules/services/services.module';
 import { TestimonialsModule } from './modules/testimonials/testimonials.module';
+import { UploadsModule } from './modules/uploads/uploads.module';
 
 @Module({
   imports: [
@@ -41,6 +43,8 @@ import { TestimonialsModule } from './modules/testimonials/testimonials.module';
     TenantsModule,
     AdminDashboardModule,
     TestimonialsModule,
+    ServicesModule,
+    UploadsModule,
   ],
   providers: [
     SyncIndexesService,

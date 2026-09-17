@@ -295,7 +295,7 @@ export class AuthService {
       to: user.email,
       /* The surface this person actually signs in on — the marketing site
          has no reset screen. */
-      resetUrl: `${appUrlForRole(this.env, user.role)}/reset-password/${token}`,
+      resetUrl: `${appUrlForRole(this.env, user.role)}/auth/reset-password/${token}`,
       expiresAt,
     });
   }
@@ -353,7 +353,7 @@ export class AuthService {
 
       await this.notifications.sendEmailVerification({
         to: user.email,
-        verifyUrl: `${appUrlForRole(this.env, user.role)}/verify-email/${token}`,
+        verifyUrl: `${appUrlForRole(this.env, user.role)}/auth/verify-email/${token}`,
         expiresAt,
       });
     } catch (error) {

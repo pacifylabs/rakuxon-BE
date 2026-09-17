@@ -190,7 +190,7 @@ export class AdminAuthService {
 
     await this.notifications.sendPasswordReset({
       to: admin.email,
-      resetUrl: `${this.env.ADMIN_APP_URL ?? this.env.WEB_APP_URL}/reset-password/${token}`,
+      resetUrl: `${this.env.ADMIN_APP_URL ?? this.env.WEB_APP_URL}/auth/reset-password/${token}`,
       expiresAt,
     });
   }

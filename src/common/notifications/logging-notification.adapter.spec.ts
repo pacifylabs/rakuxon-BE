@@ -11,7 +11,7 @@ describe('LoggingNotificationAdapter', () => {
     const adapter = new LoggingNotificationAdapter({ NODE_ENV: 'production' } as Env);
     await adapter.sendPasswordReset({
       to: 'person@example.com',
-      resetUrl: 'https://app.rakuxon.com/reset-password/secret-token',
+      resetUrl: 'https://app.rakuxon.com/auth/reset-password/secret-token',
       expiresAt: new Date(),
     });
     expect(log).not.toHaveBeenCalled();
@@ -25,7 +25,7 @@ describe('LoggingNotificationAdapter', () => {
     const adapter = new LoggingNotificationAdapter({ NODE_ENV: 'production' } as Env);
     await adapter.sendEmailVerification({
       to: 'person@example.com',
-      verifyUrl: 'https://app.rakuxon.com/verify-email/secret-token',
+      verifyUrl: 'https://app.rakuxon.com/auth/verify-email/secret-token',
       expiresAt: new Date(),
     });
     expect(log).not.toHaveBeenCalled();

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { v2 as cloudinary } from 'cloudinary';
 import { In, Repository } from 'typeorm';
@@ -14,6 +14,8 @@ import type { NotificationPort } from '../../common/notifications/notification.p
 import { DocumentStatus, Role } from '../../contract/enums';
 import { NotificationsInboxService } from '../notifications-inbox/notifications-inbox.service';
 import { StudentsService } from '../students/students.service';
+import { cloudinaryCredentials } from '../../common/utils/cloudinary-credentials';
+import type { CloudinaryCredentials } from '../../common/utils/cloudinary-credentials';
 import type { Env } from '../../common/config/env.schema';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-request';
 
@@ -59,7 +61,7 @@ export class DocumentsService {
     /* Namespaced by tenant and student, never guessable — the id alone
        would let one student's upload collide with or overwrite another's if
        either ever chose the same original filename. */
-    const publicId = `tenants/${student.tenantId}/students/${student.id}/${randomUUID()}`;
+    const publicId = `rakuxon/tenants/${student.tenantId}/students/${student.id}/${randomUUID()}`;
     const timestamp = Math.round(Date.now() / 1000);
 
     const saved = await this.documents.save(
@@ -227,14 +229,7 @@ export class DocumentsService {
     return saved;
   }
 
-  private credentials(): { cloudName: string; apiKey: string; apiSecret: string } {
-    const { CLOUDINARY_CLOUD_NAME: cloudName, CLOUDINARY_API_KEY: apiKey, CLOUDINARY_API_SECRET: apiSecret } =
-      this.env;
-
-    if (!cloudName || !apiKey || !apiSecret) {
-      throw new BadRequestException('Document upload is not configured on this deployment yet.');
-    }
-
-    return { cloudName, apiKey, apiSecret };
+  private credentials(): CloudinaryCredentials {
+    return cloudinaryCredentials(this.env);
   }
 }

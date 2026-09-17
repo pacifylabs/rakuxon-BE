@@ -20,7 +20,7 @@ describe('SmtpNotificationAdapter', () => {
 
     await adapter.sendPasswordReset({
       to: 'ada@example.com',
-      resetUrl: 'https://app.rakuxon.com/reset-password/secret-token',
+      resetUrl: 'https://app.rakuxon.com/auth/reset-password/secret-token',
       expiresAt,
     });
 
@@ -30,8 +30,8 @@ describe('SmtpNotificationAdapter', () => {
       to: 'ada@example.com',
       subject: expect.stringMatching(/password/i),
     });
-    expect(sent[0]?.html).toContain('https://app.rakuxon.com/reset-password/secret-token');
-    expect(sent[0]?.text).toContain('https://app.rakuxon.com/reset-password/secret-token');
+    expect(sent[0]?.html).toContain('https://app.rakuxon.com/auth/reset-password/secret-token');
+    expect(sent[0]?.text).toContain('https://app.rakuxon.com/auth/reset-password/secret-token');
   });
 
   it('sends a verification email from the configured address, carrying the verify link', async () => {
@@ -40,7 +40,7 @@ describe('SmtpNotificationAdapter', () => {
 
     await adapter.sendEmailVerification({
       to: 'ada@example.com',
-      verifyUrl: 'https://app.rakuxon.com/verify-email/secret-token',
+      verifyUrl: 'https://app.rakuxon.com/auth/verify-email/secret-token',
       expiresAt,
     });
 
@@ -50,8 +50,8 @@ describe('SmtpNotificationAdapter', () => {
       to: 'ada@example.com',
       subject: expect.stringMatching(/confirm|verif/i),
     });
-    expect(sent[0]?.html).toContain('https://app.rakuxon.com/verify-email/secret-token');
-    expect(sent[0]?.text).toContain('https://app.rakuxon.com/verify-email/secret-token');
+    expect(sent[0]?.html).toContain('https://app.rakuxon.com/auth/verify-email/secret-token');
+    expect(sent[0]?.text).toContain('https://app.rakuxon.com/auth/verify-email/secret-token');
   });
 
   it('sends a document-rejected email carrying the reason and the review link', async () => {
@@ -75,7 +75,7 @@ describe('SmtpNotificationAdapter', () => {
     const { adapter, sent } = build();
     await adapter.sendPasswordReset({
       to: 'ada@example.com',
-      resetUrl: 'https://app.rakuxon.com/reset-password/secret-token',
+      resetUrl: 'https://app.rakuxon.com/auth/reset-password/secret-token',
       expiresAt: new Date(),
     });
 

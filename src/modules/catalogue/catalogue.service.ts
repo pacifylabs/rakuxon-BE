@@ -95,26 +95,43 @@ export class CatalogueService {
    * what happens when a menu is hard-coded beside a filtered list.
    */
   async countries(featured?: boolean): Promise<CountryCountDto[]> {
+    /* isDestination is "are we serving this country" — a country an admin
+       has switched off must disappear from the menu, and from the listing
+       below, the moment it's turned off, not just stop being suggested. */
     const builder = this.institutions
       .createQueryBuilder('i')
+      .innerJoin(Country, 'c', 'c.code = i.countryCode')
+      .leftJoin(
+        Course,
+        'course',
+        'course."institutionId" = i.id AND course.status = :courseStatus',
+        { courseStatus: PublishStatus.Published },
+      )
       .select('i.countryCode', 'countryCode')
       .addSelect('MIN(i.country)', 'country')
-      .addSelect('COUNT(*)::int', 'institutions')
+      .addSelect('COUNT(DISTINCT i.id)::int', 'institutions')
       .where('i.status = :status', { status: PublishStatus.Published })
+      .andWhere('c.isDestination = true')
       .groupBy('i.countryCode');
 
     if (!featured) {
-      const rows = (await builder.orderBy('MIN(i.country)', 'ASC').getRawMany()) as CountryCountDto[];
-      return rows;
+      /* Countries with at least one published course sort first — the
+         signal has almost nothing to bite on today (one country has any
+         course at all), but it's the correct ordering as more are added. */
+      const rows = (await builder
+        .addSelect('COUNT(DISTINCT course.id)::int', 'courseCount')
+        .orderBy('COUNT(DISTINCT course.id)', 'DESC')
+        .addOrderBy('MIN(i.country)', 'ASC')
+        .getRawMany()) as (CountryCountDto & { courseCount: number })[];
+      return rows.map(({ courseCount: _courseCount, ...rest }) => rest);
     }
 
-    /* Featured reads want the flag and the admin-set order, so this joins the
-       countries reference table instead of the plain group-by above. MIN() on
-       both: they are single-valued per countryCode (the join is one row per
-       code), but Postgres cannot infer that from a different table's columns,
-       so they still have to be wrapped to satisfy GROUP BY. */
+    /* Featured reads want the flag and the admin-set order, so this adds the
+       countries reference table's remaining columns to the join above. MIN()
+       on both: they are single-valued per countryCode (the join is one row
+       per code), but Postgres cannot infer that from a different table's
+       columns, so they still have to be wrapped to satisfy GROUP BY. */
     const rows = (await builder
-      .innerJoin(Country, 'c', 'c.code = i.countryCode')
       .addSelect('MIN(c.flagEmoji)', 'flagEmoji')
       .addSelect('MIN(c.homepageFeaturedOrder)', 'homepageFeaturedOrder')
       .andWhere('c.homepageFeaturedOrder IS NOT NULL')
@@ -124,13 +141,27 @@ export class CatalogueService {
     return rows.map(({ homepageFeaturedOrder: _order, ...rest }) => rest);
   }
 
+  /** Countries with at least one published course, for the "courses first" institution/country ordering. */
+  private async countriesWithPublishedCourses(): Promise<string[]> {
+    const rows = (await this.dataSource.query(
+      `SELECT DISTINCT i."countryCode" AS "countryCode"
+       FROM institutions i
+       JOIN courses c ON c."institutionId" = i.id
+       WHERE i.status = $1 AND c.status = $1`,
+      [PublishStatus.Published],
+    )) as { countryCode: string }[];
+    return rows.map((row) => row.countryCode);
+  }
+
   async listInstitutions(query: ListInstitutionsQueryDto): Promise<InstitutionListDto> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 24;
 
     const builder = this.institutions
       .createQueryBuilder('i')
-      .where('i.status = :status', { status: PublishStatus.Published });
+      .innerJoin(Country, 'c', 'c.code = i.countryCode')
+      .where('i.status = :status', { status: PublishStatus.Published })
+      .andWhere('c.isDestination = true');
 
     if (query.country) builder.andWhere('i.countryCode = :country', { country: query.country });
 
@@ -154,7 +185,19 @@ export class CatalogueService {
     if (query.featured) {
       builder.andWhere('i.homepageFeaturedOrder IS NOT NULL').orderBy('i.homepageFeaturedOrder', 'ASC');
     } else {
-      builder.orderBy(query.sort === 'city' ? 'i.city' : 'i.name', 'ASC');
+      /* Institutions in a country with at least one published course sort
+         first, then the existing name/city order within and after that
+         group — see countriesWithPublishedCourses(). */
+      const coursesFirst = await this.countriesWithPublishedCourses();
+      if (coursesFirst.length > 0) {
+        builder
+          .addSelect('CASE WHEN i."countryCode" = ANY(:coursesFirst) THEN 0 ELSE 1 END', 'course_priority')
+          .setParameter('coursesFirst', coursesFirst)
+          .orderBy('course_priority', 'ASC');
+        builder.addOrderBy(query.sort === 'city' ? 'i.city' : 'i.name', 'ASC');
+      } else {
+        builder.orderBy(query.sort === 'city' ? 'i.city' : 'i.name', 'ASC');
+      }
     }
 
     builder.skip((page - 1) * limit).take(limit);
@@ -236,9 +279,16 @@ export class CatalogueService {
   }
 
   async institutionBySlug(slug: string): Promise<InstitutionDetail> {
-    const found = await this.institutions.findOne({
-      where: { slug, status: PublishStatus.Published },
-    });
+    /* Same isDestination check as the listing: a direct link to an
+       institution in a country an admin has switched off must 404 too, not
+       just drop out of the browse pages. */
+    const found = await this.institutions
+      .createQueryBuilder('i')
+      .innerJoin(Country, 'c', 'c.code = i.countryCode')
+      .where('i.slug = :slug', { slug })
+      .andWhere('i.status = :status', { status: PublishStatus.Published })
+      .andWhere('c.isDestination = true')
+      .getOne();
 
     /* 404 rather than 403 for an unpublished record: whether a draft exists is
        not something an anonymous visitor should be able to probe for. */

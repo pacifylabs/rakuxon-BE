@@ -73,7 +73,7 @@ export class OnboardingLinksService {
 
     return {
       id: saved.id,
-      url: `${this.env.WEB_APP_URL}/invite/${token}`,
+      url: `${this.env.WEB_APP_URL}/auth/invite/${token}`,
       inviteeEmail: saved.inviteeEmail,
       expiresAt: saved.expiresAt.toISOString(),
     };
