@@ -74,6 +74,21 @@ export class AssignApplicationDto {
   adminId!: string | null;
 }
 
+/**
+ * Just enough to populate an "assign to" picker — name only, not the full
+ * `AdminSummaryDto` shape (`admins.manage` gates that; assigning an
+ * application only needs `applications.manage`, a lower trust tier).
+ */
+export class AssignableAdminDto {
+  @ApiProperty({ type: String, format: 'uuid' }) id!: string;
+  @ApiProperty() firstName!: string;
+  @ApiProperty() lastName!: string;
+}
+
+export class AssignableAdminListDto {
+  @ApiProperty({ type: [AssignableAdminDto] }) items!: AssignableAdminDto[];
+}
+
 export class AdminApplicationListDto {
   @ApiProperty({ type: [AdminApplicationSummaryDto] }) items!: AdminApplicationSummaryDto[];
   @ApiProperty() total!: number;

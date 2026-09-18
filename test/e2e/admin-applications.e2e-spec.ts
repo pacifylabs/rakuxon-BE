@@ -219,6 +219,17 @@ describe('admin: applications', () => {
   });
 
   describe('assignment', () => {
+    it('lists active admins for the assign picker, without needing admins.manage', async () => {
+      const { token, adminId } = await seedAdminSession(app, ['applications.manage']);
+
+      const response = await request(app.getHttpServer())
+        .get('/v1/admin/applications/assignable-admins')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.items.some((item: { id: string }) => item.id === adminId)).toBe(true);
+    });
+
     it('assigns the application to an admin, and unassigns with adminId: null', async () => {
       const { token, adminId } = await seedAdminSession(app, ['applications.manage']);
 

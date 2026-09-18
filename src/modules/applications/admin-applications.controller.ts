@@ -6,6 +6,7 @@ import { ApplicationsService } from './applications.service';
 import {
   AdminApplicationDetailDto,
   AdminApplicationListDto,
+  AssignableAdminListDto,
   AssignApplicationDto,
   ListAdminApplicationsQueryDto,
 } from './dto/admin-application.dto';
@@ -47,6 +48,14 @@ export class AdminApplicationsController {
   async list(@Query() query: ListAdminApplicationsQueryDto): Promise<AdminApplicationListDto> {
     const { items, total, page, pageCount } = await this.applications.listAdmin(query);
     return { items: await this.applications.enrichSummaries(items), total, page, pageCount };
+  }
+
+  @Get('assignable-admins')
+  @RequirePermission('applications.manage')
+  @ApiOperation({ summary: 'Active admins, for an "assign to" picker' })
+  @ApiOkResponse({ type: AssignableAdminListDto })
+  async assignableAdmins(): Promise<AssignableAdminListDto> {
+    return { items: await this.applications.listAssignableAdmins() };
   }
 
   @Get(':id')

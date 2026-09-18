@@ -21,6 +21,7 @@ import {
   DocumentType,
   IntakeStatus,
   PublishStatus,
+  UserStatus,
 } from '../../contract/enums';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { DocumentsService } from '../documents/documents.service';
@@ -171,6 +172,15 @@ export class ApplicationsService {
     application.assignedAdminId = adminId;
     const saved = await this.applications.save(application);
     return this.withGates(saved);
+  }
+
+  /** Name-only, for an "assign to" picker — `admins.manage`'s full admin list is a higher trust tier than assigning needs. */
+  async listAssignableAdmins(): Promise<{ id: string; firstName: string; lastName: string }[]> {
+    const admins = await this.applications.manager.find(Admin, {
+      where: { status: UserStatus.Active },
+      order: { firstName: 'ASC', lastName: 'ASC' },
+    });
+    return admins.map((admin) => ({ id: admin.id, firstName: admin.firstName, lastName: admin.lastName }));
   }
 
   async attachDocument(
