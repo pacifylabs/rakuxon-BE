@@ -45,7 +45,7 @@ export class ListAdminStudentsQueryDto {
   limit?: number;
 }
 
-/** One row on the admin students list — enough to find and open a student. */
+/** One row on the admin students list — enough to find and open a student, and to gauge their engagement at a glance. */
 export class AdminStudentSummaryDto {
   @ApiProperty({ type: String, format: 'uuid' }) id!: string;
   @ApiProperty({ type: String, format: 'uuid' }) userId!: string;
@@ -53,6 +53,8 @@ export class AdminStudentSummaryDto {
   @ApiProperty() fullName!: string;
   @ApiProperty({ type: String, format: 'uuid' }) tenantId!: string;
   @ApiProperty({ type: String, format: 'date-time', nullable: true }) profileCompletedAt!: string | null;
+  @ApiProperty({ type: String, format: 'date-time' }) createdAt!: string;
+  @ApiProperty() applicationsCount!: number;
 }
 
 export class AdminStudentListDto {

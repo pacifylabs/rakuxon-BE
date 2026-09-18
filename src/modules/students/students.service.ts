@@ -191,9 +191,11 @@ export class StudentsService {
         's."userId" AS "userId"',
         's."tenantId" AS "tenantId"',
         's."profileCompletedAt" AS "profileCompletedAt"',
+        's."createdAt" AS "createdAt"',
         'u.email AS email',
         'u."firstName" AS "firstName"',
         'u."lastName" AS "lastName"',
+        '(SELECT COUNT(*) FROM applications a WHERE a."studentId" = s.id) AS "applicationsCount"',
       ]);
 
     if (query.q?.trim()) {
@@ -214,9 +216,11 @@ export class StudentsService {
         userId: string;
         tenantId: string;
         profileCompletedAt: Date | null;
+        createdAt: Date;
         email: string;
         firstName: string;
         lastName: string;
+        applicationsCount: string;
       }>();
 
     return {
@@ -227,6 +231,8 @@ export class StudentsService {
         fullName: `${row.firstName} ${row.lastName}`.trim(),
         tenantId: row.tenantId,
         profileCompletedAt: row.profileCompletedAt ? new Date(row.profileCompletedAt).toISOString() : null,
+        createdAt: new Date(row.createdAt).toISOString(),
+        applicationsCount: Number(row.applicationsCount),
       })),
       total,
       page,

@@ -49,6 +49,8 @@ describe('admin: students', () => {
 
       const row = response.body.items.find((item: { id: string }) => item.id === studentId);
       expect(row).toMatchObject({ email: expect.stringContaining('@example.com'), fullName: 'Ada Lovelace' });
+      expect(row).toHaveProperty('createdAt');
+      expect(row.applicationsCount).toBe(0);
     });
 
     it('searches by name', async () => {
