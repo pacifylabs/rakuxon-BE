@@ -32,6 +32,8 @@ import {
 } from './dto/admin.dto';
 import { AdminJwtAuthGuard } from '../../common/auth/admin-jwt-auth.guard';
 import { Public } from '../../common/auth/public.decorator';
+import { AuditResource } from '../audit-log/audit-resource.decorator';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { PermissionGuard } from '../../common/rbac/permission.guard';
 import { RequirePermission } from '../../common/rbac/require-permission.decorator';
 
@@ -51,7 +53,10 @@ import { RequirePermission } from '../../common/rbac/require-permission.decorato
 @UseGuards(AdminJwtAuthGuard, PermissionGuard)
 @ApiBearerAuth('admin-access-token')
 export class AdminsController {
-  constructor(private readonly admins: AdminsService) {}
+  constructor(
+    private readonly admins: AdminsService,
+    private readonly auditLog: AuditLogService,
+  ) {}
 
   @Get('roles')
   @RequirePermission('admins.manage')
@@ -62,6 +67,7 @@ export class AdminsController {
 
   @Post('roles')
   @RequirePermission('admins.manage')
+  @AuditResource('admin-role')
   @ApiCreatedResponse({ type: AdminRoleSummaryDto })
   createRole(@Body() dto: SaveAdminRoleDto): Promise<AdminRoleSummaryDto> {
     return this.admins.saveRole(dto);
@@ -69,6 +75,7 @@ export class AdminsController {
 
   @Patch('roles/:id')
   @RequirePermission('admins.manage')
+  @AuditResource('admin-role')
   @ApiOkResponse({ type: AdminRoleSummaryDto })
   updateRole(
     @Param('id', ParseUUIDPipe) id: string,
@@ -79,14 +86,23 @@ export class AdminsController {
 
   @Delete('roles/:id')
   @RequirePermission('admins.manage')
+  @AuditResource('admin-role')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiNoContentResponse()
   deleteRole(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
     return this.admins.deleteRole(id);
   }
 
+  @Get(':id/audit-log')
+  @RequirePermission('admins.manage')
+  @ApiOperation({ summary: "This admin's own history — every action taken on their account" })
+  async auditLogFor(@Param('id', ParseUUIDPipe) id: string) {
+    return { items: await this.auditLog.listForResource('admin', id) };
+  }
+
   @Patch(':id/role')
   @RequirePermission('admins.manage')
+  @AuditResource('admin')
   @ApiOkResponse({ type: AdminSummaryDto })
   assignRole(
     @Param('id', ParseUUIDPipe) id: string,
@@ -105,6 +121,7 @@ export class AdminsController {
 
   @Post()
   @RequirePermission('admins.manage')
+  @AuditResource('admin')
   @ApiOperation({
     summary: 'Create an admin',
     description:
@@ -127,6 +144,7 @@ export class AdminsController {
 
   @Patch(':id/permissions')
   @RequirePermission('admins.manage')
+  @AuditResource('admin')
   @ApiOperation({
     summary: 'Replace legacy direct permissions (admins without a role only)',
     deprecated: true,
@@ -146,6 +164,7 @@ export class AdminsController {
   @Post(':id/suspend')
   @HttpCode(HttpStatus.OK)
   @RequirePermission('admins.manage')
+  @AuditResource('admin')
   @ApiOperation({ summary: 'Suspend an admin account' })
   @ApiOkResponse({ type: AdminSummaryDto })
   suspend(@Param('id', ParseUUIDPipe) id: string): Promise<AdminSummaryDto> {
@@ -155,6 +174,7 @@ export class AdminsController {
   @Post(':id/reactivate')
   @HttpCode(HttpStatus.OK)
   @RequirePermission('admins.manage')
+  @AuditResource('admin')
   @ApiOperation({ summary: 'Reactivate a suspended admin account' })
   @ApiOkResponse({ type: AdminSummaryDto })
   reactivate(@Param('id', ParseUUIDPipe) id: string): Promise<AdminSummaryDto> {

@@ -217,4 +217,116 @@ describe('admin: applications', () => {
         .expect(403);
     });
   });
+
+  describe('assignment', () => {
+    it('assigns the application to an admin, and unassigns with adminId: null', async () => {
+      const { token, adminId } = await seedAdminSession(app, ['applications.manage']);
+
+      const assigned = await request(app.getHttpServer())
+        .patch(`/v1/admin/applications/${applicationId}/assign`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ adminId })
+        .expect(200);
+      expect(assigned.body.assignedAdminId).toBe(adminId);
+      expect(assigned.body.assignedAdminName).toBe('Test Admin');
+
+      const unassigned = await request(app.getHttpServer())
+        .patch(`/v1/admin/applications/${applicationId}/assign`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ adminId: null })
+        .expect(200);
+      expect(unassigned.body.assignedAdminId).toBeNull();
+    });
+
+    it('works on a submitted application too, not just a draft', async () => {
+      const session = await registerStudent();
+      const courseId = (
+        await dataSource.query(`SELECT id FROM courses WHERE slug = 'admin-probe-app-course'`)
+      )[0].id;
+      const created = await request(app.getHttpServer())
+        .post('/v1/applications')
+        .set('Authorization', `Bearer ${session.accessToken}`)
+        .send({ courseId })
+        .expect(201);
+
+      const { token, adminId } = await seedAdminSession(app, ['applications.manage']);
+      await request(app.getHttpServer())
+        .patch(`/v1/admin/applications/${created.body.id}/assign`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ adminId })
+        .expect(200);
+    });
+
+    it('refuses applications.view alone — assigning needs applications.manage', async () => {
+      const { token: viewer } = await seedAdminSession(app, ['applications.view']);
+      const { adminId } = await seedAdminSession(app, ['applications.manage']);
+
+      await request(app.getHttpServer())
+        .patch(`/v1/admin/applications/${applicationId}/assign`)
+        .set('Authorization', `Bearer ${viewer}`)
+        .send({ adminId })
+        .expect(403);
+    });
+
+    it('404s for an application that does not exist', async () => {
+      const { token, adminId } = await seedAdminSession(app, ['applications.manage']);
+
+      await request(app.getHttpServer())
+        .patch('/v1/admin/applications/00000000-0000-0000-0000-000000000000/assign')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ adminId })
+        .expect(404);
+    });
+  });
+
+  describe('audit log', () => {
+    it("records the assignment on the application's own history, attributed to the acting admin", async () => {
+      const { token, adminId } = await seedAdminSession(app, ['applications.manage']);
+
+      await request(app.getHttpServer())
+        .patch(`/v1/admin/applications/${applicationId}/assign`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ adminId })
+        .expect(200);
+
+      const { token: viewer } = await seedAdminSession(app, ['applications.view']);
+      const history = await request(app.getHttpServer())
+        .get(`/v1/admin/applications/${applicationId}/audit-log`)
+        .set('Authorization', `Bearer ${viewer}`)
+        .expect(200);
+
+      const entry = history.body.items.find((item: { action: string }) => item.action === 'applications.manage');
+      expect(entry).toMatchObject({
+        actorType: 'admin',
+        actorId: adminId,
+        actorName: 'Test Admin',
+        resourceType: 'application',
+        resourceId: applicationId,
+      });
+    });
+
+    it('also appears on the platform-wide activity log, gated by platform.audit', async () => {
+      const { token, adminId } = await seedAdminSession(app, ['applications.manage']);
+      await request(app.getHttpServer())
+        .patch(`/v1/admin/applications/${applicationId}/assign`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ adminId })
+        .expect(200);
+
+      const { token: auditor } = await seedAdminSession(app, ['platform.audit']);
+      const platformLog = await request(app.getHttpServer())
+        .get('/v1/admin/audit-log?resourceType=application')
+        .set('Authorization', `Bearer ${auditor}`)
+        .expect(200);
+      expect(
+        platformLog.body.items.some((item: { resourceId: string }) => item.resourceId === applicationId),
+      ).toBe(true);
+
+      const { token: noAccess } = await seedAdminSession(app, ['applications.manage']);
+      await request(app.getHttpServer())
+        .get('/v1/admin/audit-log')
+        .set('Authorization', `Bearer ${noAccess}`)
+        .expect(403);
+    });
+  });
 });

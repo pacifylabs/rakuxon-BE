@@ -22,6 +22,7 @@ import {
   IntakeStatus,
   PublishStatus,
 } from '../../contract/enums';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { DocumentsService } from '../documents/documents.service';
 import { StudentsService } from '../students/students.service';
 import { Tenant } from '../tenants/entities/tenant.entity';
@@ -57,7 +58,28 @@ export class ApplicationsService {
     @InjectRepository(Tenant) private readonly tenants: Repository<Tenant>,
     private readonly students: StudentsService,
     private readonly documents: DocumentsService,
+    private readonly auditLog: AuditLogService,
   ) {}
+
+  private async logStudentAction(
+    user: AuthenticatedUser,
+    applicationId: string,
+    action: string,
+    description: string,
+  ): Promise<void> {
+    const summaries = await this.students.getSummariesForAdmin([
+      (await this.students.getOwnProfile(user)).id,
+    ]);
+    await this.auditLog.record({
+      actorType: 'student',
+      actorId: user.id,
+      actorName: [...summaries.values()][0]?.fullName ?? null,
+      action,
+      description,
+      resourceType: 'application',
+      resourceId: applicationId,
+    });
+  }
 
   async create(user: AuthenticatedUser, dto: CreateApplicationDto): Promise<ApplicationWithGates> {
     const student = await this.students.getOwnProfile(user);
@@ -139,6 +161,18 @@ export class ApplicationsService {
     return this.withGates(application);
   }
 
+  /**
+   * Who currently owns working this application — not a review decision, so
+   * it's allowed regardless of status (a submitted application still needs
+   * a caseworker). `adminId: null` unassigns.
+   */
+  async assign(applicationId: string, adminId: string | null): Promise<ApplicationWithGates> {
+    const application = await this.applicationById(applicationId);
+    application.assignedAdminId = adminId;
+    const saved = await this.applications.save(application);
+    return this.withGates(saved);
+  }
+
   async attachDocument(
     user: AuthenticatedUser,
     applicationId: string,
@@ -154,6 +188,7 @@ export class ApplicationsService {
     await this.applicationDocuments.save(
       this.applicationDocuments.create({ applicationId: application.id, documentId: document.id }),
     );
+    await this.logStudentAction(user, application.id, 'application.document.attach', 'Attached a document.');
 
     return this.withGates(application);
   }
@@ -165,6 +200,7 @@ export class ApplicationsService {
   ): Promise<ApplicationWithGates> {
     const application = await this.ownedDraftApplication(user, applicationId);
     await this.applicationDocuments.delete({ applicationId: application.id, documentId });
+    await this.logStudentAction(user, application.id, 'application.document.detach', 'Detached a document.');
 
     return this.withGates(application);
   }
@@ -226,6 +262,7 @@ export class ApplicationsService {
     application.status = ApplicationStatus.Submitted;
     application.submittedAt = new Date();
     const saved = await this.applications.save(application);
+    await this.logStudentAction(user, saved.id, 'application.submit', 'Submitted the application.');
 
     return this.withGates(saved);
   }
@@ -252,11 +289,17 @@ export class ApplicationsService {
 
   /** Unscoped counterpart to `ownedDraftApplication`, for admin call sites. */
   private async draftApplicationById(id: string): Promise<Application> {
-    const application = await this.applications.findOne({ where: { id } });
-    if (!application) throw new NotFoundException('No application with that id.');
+    const application = await this.applicationById(id);
     if (application.status !== ApplicationStatus.Draft) {
       throw new ConflictException('Documents can only be attached while the application is a draft.');
     }
+    return application;
+  }
+
+  /** Unscoped, status-agnostic lookup — for admin call sites that aren't limited to drafts. */
+  private async applicationById(id: string): Promise<Application> {
+    const application = await this.applications.findOne({ where: { id } });
+    if (!application) throw new NotFoundException('No application with that id.');
     return application;
   }
 

@@ -7,6 +7,7 @@ import { ApplicationsService } from './applications.service';
 import { ApplicationDocument } from './entities/application-document.entity';
 import { Application } from './entities/application.entity';
 import { AdminAuthModule } from '../admin-auth/admin-auth.module';
+import { AuditLogModule } from '../audit-log/audit-log.module';
 import { Course } from '../catalogue/entities/course.entity';
 import { Institution } from '../catalogue/entities/institution.entity';
 import { DocumentsModule } from '../documents/documents.module';
@@ -19,6 +20,7 @@ import { Tenant } from '../tenants/entities/tenant.entity';
     StudentsModule,
     DocumentsModule,
     AdminAuthModule,
+    AuditLogModule,
   ],
   controllers: [ApplicationsController, AdminApplicationsController],
   providers: [ApplicationsService],

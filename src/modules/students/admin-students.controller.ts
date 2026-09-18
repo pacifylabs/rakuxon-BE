@@ -21,6 +21,8 @@ import {
 import { StudentsService } from './students.service';
 import { AdminJwtAuthGuard } from '../../common/auth/admin-jwt-auth.guard';
 import { Public } from '../../common/auth/public.decorator';
+import { AuditResource } from '../audit-log/audit-resource.decorator';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { PermissionGuard } from '../../common/rbac/permission.guard';
 import { RequirePermission } from '../../common/rbac/require-permission.decorator';
 
@@ -37,10 +39,14 @@ import { RequirePermission } from '../../common/rbac/require-permission.decorato
 @UseGuards(AdminJwtAuthGuard, PermissionGuard)
 @ApiBearerAuth('admin-access-token')
 export class AdminStudentsController {
-  constructor(private readonly students: StudentsService) {}
+  constructor(
+    private readonly students: StudentsService,
+    private readonly auditLog: AuditLogService,
+  ) {}
 
   @Post()
   @RequirePermission('students.manage')
+  @AuditResource('student')
   @ApiOperation({
     summary: 'Create a student on their behalf',
     description:
@@ -71,8 +77,16 @@ export class AdminStudentsController {
     return this.students.getAdminDetail(id);
   }
 
+  @Get(':id/audit-log')
+  @RequirePermission('students.view')
+  @ApiOperation({ summary: "This student's own history — every admin and student action on them" })
+  async auditLogFor(@Param('id') id: string) {
+    return { items: await this.auditLog.listForResource('student', id) };
+  }
+
   @Patch(':id')
   @RequirePermission('students.manage')
+  @AuditResource('student')
   @ApiOperation({ summary: "Edit a student's applicant profile on their behalf" })
   @ApiOkResponse({ type: AdminStudentDetailDto })
   @ApiNotFoundResponse({ description: 'No student with that id.' })
@@ -83,6 +97,7 @@ export class AdminStudentsController {
   @Post(':id/set-password')
   @HttpCode(HttpStatus.NO_CONTENT)
   @RequirePermission('students.manage')
+  @AuditResource('student')
   @ApiOperation({ summary: "Set a student's password directly — a reset done for them, not by them." })
   @ApiNoContentResponse()
   @ApiNotFoundResponse({ description: 'No student with that id.' })

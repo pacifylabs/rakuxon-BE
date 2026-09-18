@@ -9,10 +9,11 @@ import { Admin } from './entities/admin.entity';
 import { AdminPermission } from './entities/admin-permission.entity';
 import { Permission } from './entities/permission.entity';
 import { AdminAuthModule } from '../admin-auth/admin-auth.module';
+import { AuditLogModule } from '../audit-log/audit-log.module';
 import { PasswordService } from '../auth/password.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Admin, AdminPermission, Permission]), AdminAuthModule],
+  imports: [TypeOrmModule.forFeature([Admin, AdminPermission, Permission]), AdminAuthModule, AuditLogModule],
   controllers: [AdminsController, AdminAccountController],
   providers: [AdminsService, AdminAccountService, PasswordService],
 })

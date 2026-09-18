@@ -6,11 +6,18 @@ import { DocumentsController } from './documents.controller';
 import { DocumentsService } from './documents.service';
 import { Document } from './entities/document.entity';
 import { AdminAuthModule } from '../admin-auth/admin-auth.module';
+import { AuditLogModule } from '../audit-log/audit-log.module';
 import { NotificationsInboxModule } from '../notifications-inbox/notifications-inbox.module';
 import { StudentsModule } from '../students/students.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Document]), StudentsModule, NotificationsInboxModule, AdminAuthModule],
+  imports: [
+    TypeOrmModule.forFeature([Document]),
+    StudentsModule,
+    NotificationsInboxModule,
+    AdminAuthModule,
+    AuditLogModule,
+  ],
   controllers: [DocumentsController, AdminDocumentsController],
   providers: [DocumentsService],
   exports: [DocumentsService],

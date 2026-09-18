@@ -1,4 +1,4 @@
-import { Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import type { ApplicationWithGates } from './applications.service';
@@ -6,10 +6,13 @@ import { ApplicationsService } from './applications.service';
 import {
   AdminApplicationDetailDto,
   AdminApplicationListDto,
+  AssignApplicationDto,
   ListAdminApplicationsQueryDto,
 } from './dto/admin-application.dto';
 import { AdminJwtAuthGuard } from '../../common/auth/admin-jwt-auth.guard';
 import { Public } from '../../common/auth/public.decorator';
+import { AuditResource } from '../audit-log/audit-resource.decorator';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { PermissionGuard } from '../../common/rbac/permission.guard';
 import { RequirePermission } from '../../common/rbac/require-permission.decorator';
 
@@ -32,7 +35,10 @@ import { RequirePermission } from '../../common/rbac/require-permission.decorato
 @ApiBearerAuth('admin-access-token')
 @RequirePermission('applications.view')
 export class AdminApplicationsController {
-  constructor(private readonly applications: ApplicationsService) {}
+  constructor(
+    private readonly applications: ApplicationsService,
+    private readonly auditLog: AuditLogService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'List applications across every tenant, filterable by status and tenant' })
@@ -51,9 +57,31 @@ export class AdminApplicationsController {
     return this.toDetail(entry);
   }
 
+  @Get(':id/audit-log')
+  @ApiOperation({ summary: "This application's own history — every admin and student action on it" })
+  async auditLogFor(@Param('id') id: string) {
+    return { items: await this.auditLog.listForResource('application', id) };
+  }
+
+  @Patch(':id/assign')
+  @RequirePermission('applications.manage')
+  @AuditResource('application')
+  @ApiOperation({
+    summary: 'Assign this application to an admin, or unassign it',
+    description: 'Who currently owns working this application. Allowed at any status — a submitted application still needs a caseworker.',
+  })
+  @ApiOkResponse({ type: AdminApplicationDetailDto })
+  async assign(
+    @Param('id') id: string,
+    @Body() dto: AssignApplicationDto,
+  ): Promise<AdminApplicationDetailDto> {
+    return this.toDetail(await this.applications.assign(id, dto.adminId));
+  }
+
   @Post(':id/documents/:documentId')
   @HttpCode(HttpStatus.OK)
   @RequirePermission('applications.manage')
+  @AuditResource('application')
   @ApiOperation({
     summary: "Attach an admin-uploaded document to a student's draft application",
     description:
@@ -71,6 +99,7 @@ export class AdminApplicationsController {
   @Delete(':id/documents/:documentId')
   @HttpCode(HttpStatus.OK)
   @RequirePermission('applications.manage')
+  @AuditResource('application')
   @ApiOperation({ summary: "Detach a document from a student's draft application" })
   @ApiOkResponse({ type: AdminApplicationDetailDto })
   async detachDocument(

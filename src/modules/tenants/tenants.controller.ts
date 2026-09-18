@@ -24,6 +24,8 @@ import {
 import { TenantsService } from './tenants.service';
 import { AdminJwtAuthGuard } from '../../common/auth/admin-jwt-auth.guard';
 import { Public } from '../../common/auth/public.decorator';
+import { AuditResource } from '../audit-log/audit-resource.decorator';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { PermissionGuard } from '../../common/rbac/permission.guard';
 import { RequirePermission } from '../../common/rbac/require-permission.decorator';
 
@@ -37,10 +39,14 @@ import { RequirePermission } from '../../common/rbac/require-permission.decorato
 @UseGuards(AdminJwtAuthGuard, PermissionGuard)
 @ApiBearerAuth('admin-access-token')
 export class TenantsController {
-  constructor(private readonly tenants: TenantsService) {}
+  constructor(
+    private readonly tenants: TenantsService,
+    private readonly auditLog: AuditLogService,
+  ) {}
 
   @Post()
   @RequirePermission('tenants.approve')
+  @AuditResource('tenant')
   @ApiOperation({
     summary: 'Create a partner directly',
     description:
@@ -72,8 +78,16 @@ export class TenantsController {
     return this.tenants.get(id);
   }
 
+  @Get(':id/audit-log')
+  @RequirePermission('tenants.view')
+  @ApiOperation({ summary: "This partner's own history — every admin action on it" })
+  async auditLogFor(@Param('id') id: string) {
+    return { items: await this.auditLog.listForResource('tenant', id) };
+  }
+
   @Patch(':id')
   @RequirePermission('tenants.approve')
+  @AuditResource('tenant')
   @ApiOperation({ summary: "Edit a partner's name or subdomain" })
   @ApiOkResponse({ type: TenantDto })
   @ApiNotFoundResponse({ description: 'No tenant with that id.' })
@@ -84,6 +98,7 @@ export class TenantsController {
   @Post(':id/approve')
   @HttpCode(HttpStatus.OK)
   @RequirePermission('tenants.approve')
+  @AuditResource('tenant')
   @ApiOperation({
     summary: 'Approve a pending tenant',
     description: 'Pending -> active only. This is what lifts the onboarding-links gate for the agency.',
@@ -97,6 +112,7 @@ export class TenantsController {
   @Post(':id/suspend')
   @HttpCode(HttpStatus.OK)
   @RequirePermission('tenants.suspend')
+  @AuditResource('tenant')
   @ApiOperation({ summary: 'Suspend an active tenant', description: 'Active -> suspended only.' })
   @ApiOkResponse({ type: TenantDto })
   suspend(@Param('id') id: string): Promise<TenantDto> {
@@ -106,6 +122,7 @@ export class TenantsController {
   @Post(':id/reactivate')
   @HttpCode(HttpStatus.OK)
   @RequirePermission('tenants.approve')
+  @AuditResource('tenant')
   @ApiOperation({ summary: 'Reinstate a suspended tenant', description: 'Suspended -> active only.' })
   @ApiOkResponse({ type: TenantDto })
   reactivate(@Param('id') id: string): Promise<TenantDto> {
@@ -123,6 +140,7 @@ export class TenantsController {
 
   @Post(':tenantId/staff')
   @RequirePermission('tenants.approve')
+  @AuditResource('tenant')
   @ApiOperation({
     summary: 'Add a staff user to an existing partner',
     description: 'The creating admin sets a real password directly, same as creating the partner itself.',
@@ -139,6 +157,7 @@ export class TenantsController {
   @Post(':tenantId/staff/:userId/set-password')
   @HttpCode(HttpStatus.NO_CONTENT)
   @RequirePermission('tenants.approve')
+  @AuditResource('tenant')
   @ApiOperation({
     summary: "Set a staff member's password directly — a reset done for them, not by them.",
   })

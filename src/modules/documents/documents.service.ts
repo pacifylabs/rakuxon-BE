@@ -12,6 +12,7 @@ import { ENV } from '../../common/config/config.module';
 import { NOTIFICATION_PORT } from '../../common/notifications/notification.port';
 import type { NotificationPort } from '../../common/notifications/notification.port';
 import { DocumentStatus, Role } from '../../contract/enums';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { NotificationsInboxService } from '../notifications-inbox/notifications-inbox.service';
 import { StudentsService } from '../students/students.service';
 import { cloudinaryCredentials } from '../../common/utils/cloudinary-credentials';
@@ -29,6 +30,7 @@ export class DocumentsService {
     private readonly inbox: NotificationsInboxService,
     @Inject(NOTIFICATION_PORT) private readonly notifications: NotificationPort,
     @Inject(ENV) private readonly env: Env,
+    private readonly auditLog: AuditLogService,
   ) {}
 
   async createUploadSignature(
@@ -97,7 +99,16 @@ export class DocumentsService {
     dto: ConfirmDocumentUploadDto,
   ): Promise<Document> {
     const document = await this.getOwnDocument(user, documentId);
-    return this.applyConfirm(document, dto);
+    const confirmed = await this.applyConfirm(document, dto);
+    await this.auditLog.record({
+      actorType: 'student',
+      actorId: user.id,
+      action: 'document.upload',
+      description: `Uploaded a ${confirmed.type} document.`,
+      resourceType: 'document',
+      resourceId: confirmed.id,
+    });
+    return confirmed;
   }
 
   /** Same as `confirmUpload`, minus the ownership check — the caller is already permission-gated. */
@@ -130,6 +141,14 @@ export class DocumentsService {
     const document = await this.getOwnDocument(user, documentId);
     document.status = DocumentStatus.Deleted;
     await this.documents.save(document);
+    await this.auditLog.record({
+      actorType: 'student',
+      actorId: user.id,
+      action: 'document.remove',
+      description: `Removed a ${document.type} document.`,
+      resourceType: 'document',
+      resourceId: document.id,
+    });
 
     try {
       await cloudinary.uploader.destroy(document.cloudinaryPublicId, {
