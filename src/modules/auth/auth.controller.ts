@@ -7,6 +7,7 @@ import {
   Inject,
   Param,
   Post,
+  UnauthorizedException,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -22,6 +23,7 @@ import {
 import { AuthService } from './auth.service';
 import {
   AuthTokensDto,
+  AuthUserDto,
   ConfirmEmailVerificationDto,
   ConfirmPasswordResetDto,
   LoginDto,
@@ -199,9 +201,11 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'The identity behind the current access token' })
-  @ApiOkResponse({ description: 'The authenticated user.' })
+  @ApiOkResponse({ type: AuthUserDto, description: 'The authenticated user, read fresh from the database.' })
   @ApiUnauthorizedResponse({ description: 'Missing, invalid or expired bearer token.' })
-  me(@CurrentUser() user: AuthenticatedUser): AuthenticatedUser {
-    return user;
+  async me(@CurrentUser() user: AuthenticatedUser): Promise<AuthUserDto> {
+    const current = await this.auth.getCurrentUser(user.id);
+    if (!current) throw new UnauthorizedException('That account no longer exists.');
+    return current;
   }
 }

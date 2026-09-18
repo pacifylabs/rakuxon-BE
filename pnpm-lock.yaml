@@ -44,6 +44,9 @@ importers:
       cloudinary:
         specifier: ^2.11.0
         version: 2.11.0
+      disposable-email-domains:
+        specifier: ^1.0.62
+        version: 1.0.62
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1
@@ -1455,6 +1458,9 @@ packages:
 
   dijkstrajs@1.0.3:
     resolution: {integrity: sha512-qiSlmBq9+BCdCA/L46dw8Uy93mloxsPSbwnm5yrKn2vMPiy8KyAskTF6zuV/j5BMsmOGZDPs7KjU+mjb670kfA==}
+
+  disposable-email-domains@1.0.62:
+    resolution: {integrity: sha512-LBQvhRw7mznQTPoyZbsmYeNOZt1pN5aCsx4BAU/3siVFuiM9f2oyKzUaB8v1jbxFjE3aYqYiMo63kAL4pHgfWQ==}
 
   dotenv-expand@12.0.3:
     resolution: {integrity: sha512-uc47g4b+4k/M/SeaW1y4OApx+mtLWl92l5LMPP0GNXctZqELk+YGgOPIIC5elYmUH4OuoK3JLhuRUYegeySiFA==}
@@ -4616,6 +4622,8 @@ snapshots:
   diff@4.0.4: {}
 
   dijkstrajs@1.0.3: {}
+
+  disposable-email-domains@1.0.62: {}
 
   dotenv-expand@12.0.3:
     dependencies:

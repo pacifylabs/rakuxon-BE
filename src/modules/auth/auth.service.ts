@@ -27,7 +27,7 @@ import type { SsoProfile } from './sso/sso.port';
 import { Student } from '../students/entities/student.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
 import { User } from '../users/entities/user.entity';
-import type { AuthTokensDto } from './dto/auth.dto';
+import type { AuthTokensDto, AuthUserDto } from './dto/auth.dto';
 
 /** Repositories bound to a transaction that has the identity context set. */
 interface IdentityRepositories {
@@ -367,6 +367,30 @@ export class AuthService {
     if (!found || found.emailVerifiedAt) return;
 
     await this.sendVerificationEmailBestEffort(found);
+  }
+
+  /**
+   * The signed-in user's current row, not the JWT's claims.
+   *
+   * `/auth/me` used to just echo the access token's payload, which never
+   * carried `emailVerifiedAt` — so a "please verify your email" banner
+   * stayed up after the link was actually clicked, until the next full
+   * login re-issued a token. Reading the row fresh means verifying updates
+   * this immediately, with no new token needed.
+   */
+  async getCurrentUser(userId: string): Promise<AuthUserDto | null> {
+    const found = await this.inTransaction(({ users }) => users.findOne({ where: { id: userId } }));
+    if (!found) return null;
+
+    return {
+      id: found.id,
+      email: found.email,
+      firstName: found.firstName,
+      lastName: found.lastName,
+      role: found.role,
+      tenantId: found.tenantId,
+      emailVerifiedAt: found.emailVerifiedAt?.toISOString() ?? null,
+    };
   }
 
   /**

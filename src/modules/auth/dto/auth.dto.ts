@@ -2,6 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsEmail, IsNotEmpty, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 
 import { Role } from '../../../contract/enums';
+import { IsNotDisposableEmail } from '../../../common/validators/is-not-disposable-email.decorator';
 
 /** 8 characters, per NIST's length-over-composition guidance. */
 const PASSWORD_MIN = 8;
@@ -25,6 +26,7 @@ export class RegisterAgencyDto {
 
   @ApiProperty({ example: 'ada@northwind.example' })
   @IsEmail()
+  @IsNotDisposableEmail()
   email!: string;
 
   @ApiProperty({ example: 'Ada' })
@@ -49,6 +51,7 @@ export class RegisterAgencyDto {
 export class RegisterStudentDto {
   @ApiProperty({ example: 'ada@example.com' })
   @IsEmail()
+  @IsNotDisposableEmail()
   email!: string;
 
   @ApiProperty({ example: 'Ada' })

@@ -22,6 +22,7 @@ import { OnboardingLinksModule } from './modules/onboarding-links/onboarding-lin
 import { StudentsModule } from './modules/students/students.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
 import { ServicesModule } from './modules/services/services.module';
+import { SiteSettingsModule } from './modules/site-settings/site-settings.module';
 import { TestimonialsModule } from './modules/testimonials/testimonials.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 
@@ -44,6 +45,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
     AdminDashboardModule,
     TestimonialsModule,
     ServicesModule,
+    SiteSettingsModule,
     UploadsModule,
   ],
   providers: [

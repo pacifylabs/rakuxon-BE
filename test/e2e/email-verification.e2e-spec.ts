@@ -118,6 +118,30 @@ describe('email verification', () => {
         .send({ token })
         .expect(401);
     });
+
+    it('is visible on /auth/me immediately, with no new token needed', async () => {
+      const session = await registerAgency();
+      const token = notifications.latestVerificationTokenFor(session.user.email);
+
+      const before = await request(app.getHttpServer())
+        .post('/v1/auth/me')
+        .set('Authorization', `Bearer ${session.accessToken}`)
+        .expect(200);
+      expect(before.body.emailVerifiedAt).toBeNull();
+
+      await request(app.getHttpServer())
+        .post('/v1/auth/verify-email/confirm')
+        .send({ token })
+        .expect(204);
+
+      // Same access token as before verifying — /me must read the row fresh
+      // rather than echo the token's own (now stale) claims.
+      const after = await request(app.getHttpServer())
+        .post('/v1/auth/me')
+        .set('Authorization', `Bearer ${session.accessToken}`)
+        .expect(200);
+      expect(after.body.emailVerifiedAt).not.toBeNull();
+    });
   });
 
   describe('resending', () => {

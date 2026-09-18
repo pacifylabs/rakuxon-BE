@@ -4,12 +4,15 @@ import { DataSource } from 'typeorm';
 
 import { createTestApp, truncateIdentity } from '../helpers/create-test-app';
 import { seedAdminSession } from '../helpers/seed-admin';
+import { DocumentStatus, DocumentType } from '../../src/contract/enums';
+import { Document } from '../../src/modules/documents/entities/document.entity';
 
 describe('admin: applications', () => {
   let app: INestApplication;
   let dataSource: DataSource;
   let applicationId: string;
   let tenantId: string;
+  let studentId: string;
 
   async function registerStudent() {
     const { body } = await request(app.getHttpServer())
@@ -30,6 +33,9 @@ describe('admin: applications', () => {
 
     const session = await registerStudent();
     tenantId = session.user.tenantId;
+    studentId = (
+      await dataSource.query(`SELECT id FROM students WHERE "userId" = $1`, [session.user.id])
+    )[0].id;
 
     await dataSource.query('TRUNCATE TABLE "courses", "institutions" CASCADE');
     await dataSource.query(`
@@ -109,7 +115,7 @@ describe('admin: applications', () => {
     });
   });
 
-  it('has no mutating routes — refuses a POST on the collection', async () => {
+  it('has no create route — refuses a POST on the collection itself', async () => {
     const { token } = await seedAdminSession(app, ['applications.view']);
 
     await request(app.getHttpServer())
@@ -126,5 +132,89 @@ describe('admin: applications', () => {
       .get('/v1/admin/applications')
       .set('Authorization', `Bearer ${token}`)
       .expect(403);
+  });
+
+  describe('attaching a document on the student\'s behalf', () => {
+    async function seedUploadedDocument(): Promise<Document> {
+      const repo = dataSource.getRepository(Document);
+      return repo.save(
+        repo.create({
+          tenantId,
+          studentId,
+          type: DocumentType.Identity,
+          status: DocumentStatus.Uploaded,
+          originalFilename: 'passport.pdf',
+          cloudinaryPublicId: `test/${Math.random().toString(36).slice(2, 10)}`,
+          url: 'https://res.cloudinary.com/demo/raw/upload/v1/passport.pdf',
+        }),
+      );
+    }
+
+    it('attaches an admin-uploaded document and clears it from missingDocumentTypes', async () => {
+      const document = await seedUploadedDocument();
+      const { token } = await seedAdminSession(app, ['applications.manage']);
+
+      const response = await request(app.getHttpServer())
+        .post(`/v1/admin/applications/${applicationId}/documents/${document.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.attachedDocumentIds).toContain(document.id);
+      expect(response.body.missingDocumentTypes).not.toContain('identity');
+    });
+
+    it('detaches it again, putting the type back in missingDocumentTypes', async () => {
+      const document = await seedUploadedDocument();
+      const { token } = await seedAdminSession(app, ['applications.manage']);
+
+      await request(app.getHttpServer())
+        .post(`/v1/admin/applications/${applicationId}/documents/${document.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const response = await request(app.getHttpServer())
+        .delete(`/v1/admin/applications/${applicationId}/documents/${document.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.attachedDocumentIds).not.toContain(document.id);
+    });
+
+    it('refuses a document that belongs to a different student', async () => {
+      const otherStudent = await registerStudent();
+      const otherStudentId = (
+        await dataSource.query(`SELECT id FROM students WHERE "userId" = $1`, [otherStudent.user.id])
+      )[0].id;
+
+      const repo = dataSource.getRepository(Document);
+      const foreignDocument = await repo.save(
+        repo.create({
+          tenantId: otherStudent.user.tenantId,
+          studentId: otherStudentId,
+          type: DocumentType.Identity,
+          status: DocumentStatus.Uploaded,
+          originalFilename: 'passport.pdf',
+          cloudinaryPublicId: `test/${Math.random().toString(36).slice(2, 10)}`,
+          url: 'https://res.cloudinary.com/demo/raw/upload/v1/passport.pdf',
+        }),
+      );
+
+      const { token } = await seedAdminSession(app, ['applications.manage']);
+
+      await request(app.getHttpServer())
+        .post(`/v1/admin/applications/${applicationId}/documents/${foreignDocument.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(400);
+    });
+
+    it('refuses applications.view alone — attaching needs applications.manage', async () => {
+      const document = await seedUploadedDocument();
+      const { token } = await seedAdminSession(app, ['applications.view']);
+
+      await request(app.getHttpServer())
+        .post(`/v1/admin/applications/${applicationId}/documents/${document.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
   });
 });

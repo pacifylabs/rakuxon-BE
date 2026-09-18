@@ -168,6 +168,39 @@ export class ApplicationsService {
     return this.withGates(application);
   }
 
+  /**
+   * The admin equivalent of `attachDocument`/`detachDocument` — no student
+   * to own the request, so the ownership check is replaced with an explicit
+   * "this document is actually this application's student's" check, which
+   * the student path gets for free by construction (`getOwnDocument` already
+   * scopes to the caller). Without it, an admin could attach any student's
+   * document to any application.
+   */
+  async attachDocumentAdmin(applicationId: string, documentId: string): Promise<ApplicationWithGates> {
+    const application = await this.draftApplicationById(applicationId);
+    const document = await this.documents.getById(documentId);
+
+    if (document.studentId !== application.studentId) {
+      throw new BadRequestException('That document does not belong to this application\'s student.');
+    }
+    if (document.status !== DocumentStatus.Uploaded) {
+      throw new BadRequestException('Only a fully uploaded document can be attached.');
+    }
+
+    await this.applicationDocuments.save(
+      this.applicationDocuments.create({ applicationId: application.id, documentId: document.id }),
+    );
+
+    return this.withGates(application);
+  }
+
+  async detachDocumentAdmin(applicationId: string, documentId: string): Promise<ApplicationWithGates> {
+    const application = await this.draftApplicationById(applicationId);
+    await this.applicationDocuments.delete({ applicationId: application.id, documentId });
+
+    return this.withGates(application);
+  }
+
   async submit(user: AuthenticatedUser, applicationId: string): Promise<ApplicationWithGates> {
     const application = await this.ownedApplication(user, applicationId);
 
@@ -210,6 +243,16 @@ export class ApplicationsService {
 
   private async ownedDraftApplication(user: AuthenticatedUser, id: string): Promise<Application> {
     const application = await this.ownedApplication(user, id);
+    if (application.status !== ApplicationStatus.Draft) {
+      throw new ConflictException('Documents can only be attached while the application is a draft.');
+    }
+    return application;
+  }
+
+  /** Unscoped counterpart to `ownedDraftApplication`, for admin call sites. */
+  private async draftApplicationById(id: string): Promise<Application> {
+    const application = await this.applications.findOne({ where: { id } });
+    if (!application) throw new NotFoundException('No application with that id.');
     if (application.status !== ApplicationStatus.Draft) {
       throw new ConflictException('Documents can only be attached while the application is a draft.');
     }

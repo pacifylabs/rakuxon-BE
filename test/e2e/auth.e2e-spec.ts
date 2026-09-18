@@ -72,6 +72,10 @@ describe('auth', () => {
       // docs/07-api-contract.md: tenancy is derived server-side, never sent.
       await register({ tenantId: '00000000-0000-0000-0000-000000000000' }).expect(400);
     });
+
+    it('refuses a known disposable-domain email', async () => {
+      await register({ email: 'ada@mailinator.com' }).expect(400);
+    });
   });
 
   describe('POST /v1/auth/register/student', () => {
@@ -115,6 +119,10 @@ describe('auth', () => {
       // docs/07-api-contract.md: tenancy is derived server-side, never sent.
       // A direct signup always lands in the house tenant, regardless.
       await registerStudent({ tenantId: '00000000-0000-0000-0000-000000000099' }).expect(400);
+    });
+
+    it('refuses a known disposable-domain email', async () => {
+      await registerStudent({ email: 'grace@mailinator.com' }).expect(400);
     });
   });
 

@@ -187,6 +187,13 @@ export class DocumentsService {
     return this.documents.find({ where: { studentId }, order: { createdAt: 'DESC' } });
   }
 
+  /** Unscoped lookup for admin call sites that already know which student's document this is. */
+  async getById(documentId: string): Promise<Document> {
+    const document = await this.documents.findOne({ where: { id: documentId } });
+    if (!document) throw new NotFoundException('No document with that id.');
+    return document;
+  }
+
   /**
    * Rejects an uploaded document and tells the student, both ways: an
    * in-app row (a plain DB write in this same request — nothing about it
