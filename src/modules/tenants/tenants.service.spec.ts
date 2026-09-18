@@ -1,21 +1,28 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConflictException, NotFoundException } from '@nestjs/common';
+import { DataSource } from 'typeorm';
 
 import { Tenant } from './entities/tenant.entity';
 import { TenantsService } from './tenants.service';
 import { TenantStatus } from '../../contract/enums';
+import { PasswordService } from '../auth/password.service';
+import { User } from '../users/entities/user.entity';
 
 /**
  * Covers the status state machine directly — `list()`'s query-builder
- * plumbing is exercised by the e2e suite instead, where a real database makes
- * it worth more than mocking every chained call here.
+ * plumbing, and the create/staff transactions, are exercised by the e2e
+ * suite instead, where a real database makes it worth more than mocking
+ * every chained call here.
  */
 describe('TenantsService', () => {
   const repo = {
     findOne: jest.fn(),
     save: jest.fn((entity: unknown) => entity),
   };
+  const userRepo = { find: jest.fn(), findOne: jest.fn(), update: jest.fn() };
+  const dataSource = { transaction: jest.fn() };
+  const passwords = { hash: jest.fn(), verify: jest.fn() };
 
   let service: TenantsService;
 
@@ -23,7 +30,13 @@ describe('TenantsService', () => {
     jest.clearAllMocks();
 
     const moduleRef = await Test.createTestingModule({
-      providers: [TenantsService, { provide: getRepositoryToken(Tenant), useValue: repo }],
+      providers: [
+        TenantsService,
+        { provide: getRepositoryToken(Tenant), useValue: repo },
+        { provide: getRepositoryToken(User), useValue: userRepo },
+        { provide: DataSource, useValue: dataSource },
+        { provide: PasswordService, useValue: passwords },
+      ],
     }).compile();
 
     service = moduleRef.get(TenantsService);

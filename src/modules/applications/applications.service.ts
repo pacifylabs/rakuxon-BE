@@ -1,3 +1,4 @@
+import { Admin } from '../admins/entities/admin.entity';
 import {
   BadRequestException,
   ConflictException,
@@ -292,21 +293,26 @@ export class ApplicationsService {
     const institutionIds = [...new Set(applications.map((row) => row.institutionId))];
     const tenantIds = [...new Set(applications.map((row) => row.tenantId))];
 
-    const [studentSummaries, courses, institutions, tenants] = await Promise.all([
+    const adminIds = [...new Set(applications.flatMap(row => row.assignedAdminId ? [row.assignedAdminId] : []))];
+    const [studentSummaries, courses, institutions, tenants, admins] = await Promise.all([
       this.students.getSummariesForAdmin(studentIds),
       this.courses.find({ where: { id: In(courseIds) } }),
       this.institutions.find({ where: { id: In(institutionIds) } }),
       this.tenants.find({ where: { id: In(tenantIds) } }),
+      adminIds.length ? this.applications.manager.findBy(Admin, { id: In(adminIds) }) : Promise.resolve([]),
     ]);
 
     const courseTitleById = new Map(courses.map((course) => [course.id, course.title]));
     const institutionNameById = new Map(institutions.map((institution) => [institution.id, institution.name]));
     const tenantNameById = new Map(tenants.map((tenant) => [tenant.id, tenant.name]));
 
+    const adminNames = new Map(admins.map(admin => [admin.id, `${admin.firstName} ${admin.lastName}`]));
     return applications.map((row) => ({
       id: row.id,
       tenantId: row.tenantId,
       tenantName: tenantNameById.get(row.tenantId) ?? 'Unknown tenant',
+      assignedAdminId: row.assignedAdminId ?? null,
+      assignedAdminName: row.assignedAdminId ? adminNames.get(row.assignedAdminId) ?? null : null,
       studentId: row.studentId,
       studentName: studentSummaries.get(row.studentId)?.fullName ?? 'Unknown student',
       studentEmail: studentSummaries.get(row.studentId)?.email ?? '',

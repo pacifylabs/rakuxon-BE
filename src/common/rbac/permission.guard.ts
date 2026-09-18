@@ -8,7 +8,7 @@ import type { AuthenticatedAdminRequest } from '../auth/authenticated-admin-requ
  * Permission check for admin routes — requires every listed key, not just
  * one. Applied alongside AdminJwtAuthGuard, which populates
  * `request.admin.permissions`; this guard never queries the database itself,
- * since the permission list already travels inside the access token.
+ * because AdminJwtAuthGuard resolves current grants on every request.
  */
 @Injectable()
 export class PermissionGuard implements CanActivate {

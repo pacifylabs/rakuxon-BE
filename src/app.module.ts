@@ -13,6 +13,7 @@ import { buildDataSourceOptions } from './database/data-source';
 import { AdminAuthModule } from './modules/admin-auth/admin-auth.module';
 import { AdminsModule } from './modules/admins/admins.module';
 import { ApplicationsModule } from './modules/applications/applications.module';
+import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CatalogueModule } from './modules/catalogue/catalogue.module';
 import { AdminDashboardModule } from './modules/dashboard/admin-dashboard.module';
@@ -39,6 +40,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
     NotificationsInboxModule,
     DocumentsModule,
     ApplicationsModule,
+    AuditLogModule,
     AdminAuthModule,
     AdminsModule,
     TenantsModule,

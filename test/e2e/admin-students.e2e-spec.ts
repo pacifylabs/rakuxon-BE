@@ -147,5 +147,117 @@ describe('admin: students', () => {
         .send({ nationality: 'GH' })
         .expect(403);
     });
+
+    it("edits the account's email and name alongside the profile", async () => {
+      const { token } = await seedAdminSession(app, ['students.manage', 'students.view']);
+      const newEmail = `renamed-${Math.random().toString(36).slice(2, 8)}@example.com`;
+
+      const response = await request(app.getHttpServer())
+        .patch(`/v1/admin/students/${studentId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ email: newEmail, firstName: 'Grace', lastName: 'Hopper' })
+        .expect(200);
+
+      expect(response.body).toMatchObject({ email: newEmail, fullName: 'Grace Hopper' });
+    });
+
+    it('refuses to change the email to one already registered in the same partner', async () => {
+      const other = await registerStudent();
+      const { token } = await seedAdminSession(app, ['students.manage']);
+
+      await request(app.getHttpServer())
+        .patch(`/v1/admin/students/${studentId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ email: other.user.email })
+        .expect(409);
+    });
+  });
+
+  describe('POST /v1/admin/students', () => {
+    it("creates a student on the partner's behalf, with a password set directly", async () => {
+      const { token } = await seedAdminSession(app, ['students.manage']);
+      const email = `created-${Math.random().toString(36).slice(2, 8)}@example.com`;
+
+      const response = await request(app.getHttpServer())
+        .post('/v1/admin/students')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ email, firstName: 'Marie', lastName: 'Curie', password: 'correct-horse-battery' })
+        .expect(201);
+
+      expect(response.body).toMatchObject({ email, fullName: 'Marie Curie' });
+
+      const login = await request(app.getHttpServer())
+        .post('/v1/auth/login')
+        .send({ email, password: 'correct-horse-battery' })
+        .expect(200);
+      expect(login.body.user.email).toBe(email);
+    });
+
+    it('refuses a duplicate email in the same partner', async () => {
+      const existing = await registerStudent();
+      const { token } = await seedAdminSession(app, ['students.manage']);
+
+      await request(app.getHttpServer())
+        .post('/v1/admin/students')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          email: existing.user.email,
+          firstName: 'Ada',
+          lastName: 'Lovelace',
+          password: 'correct-horse-battery',
+        })
+        .expect(409);
+    });
+
+    it('refuses a token without students.manage', async () => {
+      const { token } = await seedAdminSession(app, ['students.view']);
+
+      await request(app.getHttpServer())
+        .post('/v1/admin/students')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          email: `blocked-${Math.random().toString(36).slice(2, 8)}@example.com`,
+          firstName: 'Ada',
+          lastName: 'Lovelace',
+          password: 'correct-horse-battery',
+        })
+        .expect(403);
+    });
+  });
+
+  describe('POST /v1/admin/students/:id/set-password', () => {
+    it("sets a student's password directly, and the new password signs them in", async () => {
+      const created = await registerStudent();
+      const me = await request(app.getHttpServer())
+        .get('/v1/students/me')
+        .set('Authorization', `Bearer ${created.accessToken}`)
+        .expect(200);
+
+      const { token } = await seedAdminSession(app, ['students.manage']);
+      await request(app.getHttpServer())
+        .post(`/v1/admin/students/${me.body.id}/set-password`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ password: 'a-brand-new-passphrase' })
+        .expect(204);
+
+      const login = await request(app.getHttpServer())
+        .post('/v1/auth/login')
+        .send({ email: created.user.email, password: 'a-brand-new-passphrase' })
+        .expect(200);
+      expect(login.body.user.email).toBe(created.user.email);
+      await request(app.getHttpServer()).post('/v1/auth/refresh')
+        .send({ refreshToken: created.refreshToken }).expect(401);
+
+    });
+
+    it('404s for an id that does not exist', async () => {
+      const { token } = await seedAdminSession(app, ['students.manage']);
+
+      await request(app.getHttpServer())
+        .post('/v1/admin/students/00000000-0000-0000-0000-000000000000/set-password')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ password: 'a-brand-new-passphrase' })
+        .expect(404);
+    });
   });
 });

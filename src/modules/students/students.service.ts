@@ -1,8 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { adminSetPassword } from '../auth/admin-set-password';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 
 import type {
+  AdminCreateStudentDto,
   AdminStudentDetailDto,
   AdminStudentSummaryDto,
   ListAdminStudentsQueryDto,
@@ -12,6 +14,9 @@ import type { UpdateStudentProfileDto } from './dto/student.dto';
 import { Student } from './entities/student.entity';
 import { definedEntries } from '../../common/utils/defined-entries';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-request';
+import { PasswordService } from '../auth/password.service';
+import { HOUSE_TENANT_ID } from '../../contract/constants';
+import { Role, UserStatus } from '../../contract/enums';
 import { User } from '../users/entities/user.entity';
 
 interface Paged<T> {
@@ -36,7 +41,55 @@ export class StudentsService {
   constructor(
     @InjectRepository(Student) private readonly students: Repository<Student>,
     @InjectRepository(User) private readonly users: Repository<User>,
+    private readonly dataSource: DataSource,
+    private readonly passwords: PasswordService,
   ) {}
+
+  /**
+   * An admin bringing in a student the partner already has elsewhere — a
+   * real password set directly, no self-verification needed since the admin
+   * is vouching for the account. Mirrors `AuthService.createStudentAccount`
+   * (User + Student in one transaction) but issues no session: the admin is
+   * not the student, and should never end up signed in as one.
+   */
+  async createByAdmin(dto: AdminCreateStudentDto): Promise<AdminStudentDetailDto> {
+    const tenantId = dto.tenantId ?? HOUSE_TENANT_ID;
+    const passwordHash = await this.passwords.hash(dto.password);
+
+    const studentId = await this.dataSource.transaction(async (m) => {
+      if (await m.exists(User, { where: { tenantId, email: dto.email } })) {
+        throw new ConflictException('That email is already registered.');
+      }
+
+      const user = await m.save(
+        User,
+        m.create(User, {
+          tenantId,
+          email: dto.email,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          passwordHash,
+          role: Role.Student,
+          status: UserStatus.Active,
+          emailVerifiedAt: new Date(),
+        }),
+      );
+
+      const student = await m.save(Student, m.create(Student, { tenantId, userId: user.id }));
+      return student.id;
+    });
+
+    return this.getAdminDetail(studentId);
+  }
+
+  /** An admin setting a student's password directly — a reset done for them, not by them. */
+  async setPassword(id: string, password: string): Promise<void> {
+    const student = await this.students.findOne({ where: { id } });
+    if (!student) throw new NotFoundException('No student with that id.');
+
+    const passwordHash = await this.passwords.hash(password);
+    await adminSetPassword(this.dataSource, student.userId, passwordHash);
+  }
 
   async getOwnProfile(user: AuthenticatedUser): Promise<Student> {
     const student = await this.students.findOne({
@@ -68,8 +121,33 @@ export class StudentsService {
     const student = await this.students.findOne({ where: { id } });
     if (!student) throw new NotFoundException('No student with that id.');
 
-    const saved = await this.students.save(this.applyPatch(student, patch));
+    const { email, firstName, lastName, ...profilePatch } = patch;
+    if (email !== undefined || firstName !== undefined || lastName !== undefined) {
+      await this.updateAccountFields(student, { email, firstName, lastName });
+    }
+
+    const saved = await this.students.save(this.applyPatch(student, profilePatch));
     return this.getAdminDetail(saved.id);
+  }
+
+  /** The `User` half of an admin edit — email/name live on the account, not the applicant profile. */
+  private async updateAccountFields(
+    student: Student,
+    patch: { email?: string; firstName?: string; lastName?: string },
+  ): Promise<void> {
+    const user = await this.users.findOne({ where: { id: student.userId } });
+    if (!user) throw new NotFoundException('No student with that id.');
+
+    if (patch.email !== undefined && patch.email !== user.email) {
+      if (await this.users.exist({ where: { tenantId: student.tenantId, email: patch.email } })) {
+        throw new ConflictException('That email is already registered.');
+      }
+      user.email = patch.email;
+    }
+    if (patch.firstName !== undefined) user.firstName = patch.firstName;
+    if (patch.lastName !== undefined) user.lastName = patch.lastName;
+
+    await this.users.save(user);
   }
 
   private applyPatch(student: Student, patch: UpdateStudentProfileDto | UpdateStudentAdminDto): Student {
@@ -169,6 +247,8 @@ export class StudentsService {
       tenantId: student.tenantId,
       email: user.email,
       fullName: `${user.firstName} ${user.lastName}`.trim(),
+      firstName: user.firstName,
+      lastName: user.lastName,
       dateOfBirth: student.dateOfBirth,
       nationality: student.nationality,
       phone: student.phone,

@@ -1,8 +1,35 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiCreatedResponse, ApiForbiddenResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { AdminRoleSummaryDto, SaveAdminRoleDto, AssignAdminRoleDto } from './dto/admin-role.dto';
+import {
+  Body,
+  Controller,
+  Delete,
+  ParseUUIDPipe,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiForbiddenResponse,
+  ApiOkResponse,
+  ApiNoContentResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 
 import { AdminsService } from './admins.service';
-import { AdminListDto, AdminSummaryDto, CreateAdminDto, PermissionDto, UpdateAdminPermissionsDto } from './dto/admin.dto';
+import {
+  AdminListDto,
+  AdminSummaryDto,
+  CreateAdminDto,
+  PermissionDto,
+  UpdateAdminPermissionsDto,
+} from './dto/admin.dto';
 import { AdminJwtAuthGuard } from '../../common/auth/admin-jwt-auth.guard';
 import { Public } from '../../common/auth/public.decorator';
 import { PermissionGuard } from '../../common/rbac/permission.guard';
@@ -26,6 +53,48 @@ import { RequirePermission } from '../../common/rbac/require-permission.decorato
 export class AdminsController {
   constructor(private readonly admins: AdminsService) {}
 
+  @Get('roles')
+  @RequirePermission('admins.manage')
+  @ApiOkResponse({ type: [AdminRoleSummaryDto] })
+  listRoles(): Promise<AdminRoleSummaryDto[]> {
+    return this.admins.listRoles();
+  }
+
+  @Post('roles')
+  @RequirePermission('admins.manage')
+  @ApiCreatedResponse({ type: AdminRoleSummaryDto })
+  createRole(@Body() dto: SaveAdminRoleDto): Promise<AdminRoleSummaryDto> {
+    return this.admins.saveRole(dto);
+  }
+
+  @Patch('roles/:id')
+  @RequirePermission('admins.manage')
+  @ApiOkResponse({ type: AdminRoleSummaryDto })
+  updateRole(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SaveAdminRoleDto,
+  ): Promise<AdminRoleSummaryDto> {
+    return this.admins.saveRole(dto, id);
+  }
+
+  @Delete('roles/:id')
+  @RequirePermission('admins.manage')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiNoContentResponse()
+  deleteRole(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
+    return this.admins.deleteRole(id);
+  }
+
+  @Patch(':id/role')
+  @RequirePermission('admins.manage')
+  @ApiOkResponse({ type: AdminSummaryDto })
+  assignRole(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AssignAdminRoleDto,
+  ): Promise<AdminSummaryDto> {
+    return this.admins.assignRole(id, dto.roleId);
+  }
+
   @Get('permissions')
   @RequirePermission('admins.manage')
   @ApiOperation({ summary: 'The full permission catalogue, for a create/edit form' })
@@ -40,7 +109,7 @@ export class AdminsController {
     summary: 'Create an admin',
     description:
       'The creating admin sets a real password directly, and assigns the new admin’s initial ' +
-      'permission set. The new admin can change their password via the reset flow like anyone else.',
+      'role. The new admin can change their password via the reset flow like anyone else.',
   })
   @ApiCreatedResponse({ type: AdminSummaryDto })
   @ApiForbiddenResponse({ description: 'Missing the admins.manage permission.' })
@@ -59,7 +128,8 @@ export class AdminsController {
   @Patch(':id/permissions')
   @RequirePermission('admins.manage')
   @ApiOperation({
-    summary: 'Replace an admin’s permission set',
+    summary: 'Replace legacy direct permissions (admins without a role only)',
+    deprecated: true,
     description:
       'Sets the permission set to exactly the given list — not additive. An admin holding ' +
       'admins.manage may grant or revoke any permission key, including ones they do not ' +
@@ -67,7 +137,7 @@ export class AdminsController {
   })
   @ApiOkResponse({ type: AdminSummaryDto })
   updatePermissions(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateAdminPermissionsDto,
   ): Promise<AdminSummaryDto> {
     return this.admins.updatePermissions(id, dto.permissionKeys);
@@ -78,7 +148,7 @@ export class AdminsController {
   @RequirePermission('admins.manage')
   @ApiOperation({ summary: 'Suspend an admin account' })
   @ApiOkResponse({ type: AdminSummaryDto })
-  suspend(@Param('id') id: string): Promise<AdminSummaryDto> {
+  suspend(@Param('id', ParseUUIDPipe) id: string): Promise<AdminSummaryDto> {
     return this.admins.suspend(id);
   }
 
@@ -87,7 +157,7 @@ export class AdminsController {
   @RequirePermission('admins.manage')
   @ApiOperation({ summary: 'Reactivate a suspended admin account' })
   @ApiOkResponse({ type: AdminSummaryDto })
-  reactivate(@Param('id') id: string): Promise<AdminSummaryDto> {
+  reactivate(@Param('id', ParseUUIDPipe) id: string): Promise<AdminSummaryDto> {
     return this.admins.reactivate(id);
   }
 }

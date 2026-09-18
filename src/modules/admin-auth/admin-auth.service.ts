@@ -1,3 +1,4 @@
+import { adminPermissionKeys } from '../admins/admin-access';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
@@ -48,7 +49,10 @@ export class AdminAuthService {
     private readonly dataSource: DataSource,
   ) {}
 
-  async login(email: string, password: string): Promise<AdminAuthTokensDto | AdminLoginChallengeDto> {
+  async login(
+    email: string,
+    password: string,
+  ): Promise<AdminAuthTokensDto | AdminLoginChallengeDto> {
     /* passwordHash is select:false, so ask for it explicitly. */
     const admin = await this.inTransaction(({ admins }) =>
       admins
@@ -84,7 +88,9 @@ export class AdminAuthService {
     try {
       claims = await this.tokens.verifyTotpChallenge(challengeToken);
     } catch {
-      throw new UnauthorizedException('That verification session has expired. Please sign in again.');
+      throw new UnauthorizedException(
+        'That verification session has expired. Please sign in again.',
+      );
     }
 
     const admin = await this.inTransaction(({ admins }) =>
@@ -102,7 +108,12 @@ export class AdminAuthService {
       throw new UnauthorizedException('This account is not active.');
     }
 
-    const valid = speakeasy.totp.verify({ secret: admin.totpSecret, encoding: 'base32', token: code.trim(), window: 1 });
+    const valid = speakeasy.totp.verify({
+      secret: admin.totpSecret,
+      encoding: 'base32',
+      token: code.trim(),
+      window: 1,
+    });
     if (valid) {
       return this.issueTokens(admin);
     }
@@ -216,18 +227,16 @@ export class AdminAuthService {
     });
   }
 
-  private async loadPermissionKeys(adminId: string, repos: AdminIdentityRepositories): Promise<string[]> {
-    const rows = await repos.permissions
-      .createQueryBuilder('permission')
-      .innerJoin('admin_permissions', 'ap', 'ap."permissionId" = permission.id')
-      .where('ap."adminId" = :adminId', { adminId })
-      .select('permission.key', 'key')
-      .getRawMany<{ key: string }>();
-
-    return rows.map((row) => row.key);
+  private async loadPermissionKeys(
+    adminId: string,
+    repos: AdminIdentityRepositories,
+  ): Promise<string[]> {
+    return adminPermissionKeys(repos.manager, adminId);
   }
 
-  private async inTransaction<T>(work: (repos: AdminIdentityRepositories) => Promise<T>): Promise<T> {
+  private async inTransaction<T>(
+    work: (repos: AdminIdentityRepositories) => Promise<T>,
+  ): Promise<T> {
     return this.dataSource.transaction((manager: EntityManager) =>
       work({
         admins: manager.getRepository(Admin),
@@ -248,8 +257,13 @@ export class AdminAuthService {
     await repos.refreshTokens.update({ familyId, revokedAt: IsNull() }, { revokedAt: new Date() });
   }
 
-  private async issueTokens(admin: Admin, rotating?: AdminRefreshToken): Promise<AdminAuthTokensDto> {
-    const permissions = await this.inTransaction((repos) => this.loadPermissionKeys(admin.id, repos));
+  private async issueTokens(
+    admin: Admin,
+    rotating?: AdminRefreshToken,
+  ): Promise<AdminAuthTokensDto> {
+    const permissions = await this.inTransaction((repos) =>
+      this.loadPermissionKeys(admin.id, repos),
+    );
 
     const accessToken = await this.tokens.signAccessToken({
       sub: admin.id,

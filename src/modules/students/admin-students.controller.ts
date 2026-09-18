@@ -1,10 +1,21 @@
-import { Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiForbiddenResponse,
+  ApiNoContentResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 
 import {
+  AdminCreateStudentDto,
   AdminStudentDetailDto,
   AdminStudentListDto,
   ListAdminStudentsQueryDto,
+  SetStudentPasswordDto,
   UpdateStudentAdminDto,
 } from './dto/admin-student.dto';
 import { StudentsService } from './students.service';
@@ -27,6 +38,21 @@ import { RequirePermission } from '../../common/rbac/require-permission.decorato
 @ApiBearerAuth('admin-access-token')
 export class AdminStudentsController {
   constructor(private readonly students: StudentsService) {}
+
+  @Post()
+  @RequirePermission('students.manage')
+  @ApiOperation({
+    summary: 'Create a student on their behalf',
+    description:
+      'For students a partner already has, manually or through another system. The creating ' +
+      'admin sets a real password directly; the student can change it via the reset flow like ' +
+      'anyone else. No self-verification is needed — the admin is vouching for the account.',
+  })
+  @ApiCreatedResponse({ type: AdminStudentDetailDto })
+  @ApiForbiddenResponse({ description: 'Missing the students.manage permission.' })
+  create(@Body() dto: AdminCreateStudentDto): Promise<AdminStudentDetailDto> {
+    return this.students.createByAdmin(dto);
+  }
 
   @Get()
   @RequirePermission('students.view')
@@ -52,5 +78,15 @@ export class AdminStudentsController {
   @ApiNotFoundResponse({ description: 'No student with that id.' })
   update(@Param('id') id: string, @Body() body: UpdateStudentAdminDto): Promise<AdminStudentDetailDto> {
     return this.students.updateAdmin(id, body);
+  }
+
+  @Post(':id/set-password')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @RequirePermission('students.manage')
+  @ApiOperation({ summary: "Set a student's password directly — a reset done for them, not by them." })
+  @ApiNoContentResponse()
+  @ApiNotFoundResponse({ description: 'No student with that id.' })
+  setPassword(@Param('id') id: string, @Body() body: SetStudentPasswordDto): Promise<void> {
+    return this.students.setPassword(id, body.password);
   }
 }

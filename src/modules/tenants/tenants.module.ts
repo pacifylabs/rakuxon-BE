@@ -5,11 +5,13 @@ import { Tenant } from './entities/tenant.entity';
 import { TenantsController } from './tenants.controller';
 import { TenantsService } from './tenants.service';
 import { AdminAuthModule } from '../admin-auth/admin-auth.module';
+import { PasswordService } from '../auth/password.service';
+import { User } from '../users/entities/user.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Tenant]), AdminAuthModule],
+  imports: [TypeOrmModule.forFeature([Tenant, User]), AdminAuthModule],
   controllers: [TenantsController],
-  providers: [TenantsService],
+  providers: [TenantsService, PasswordService],
   exports: [TenantsService],
 })
 export class TenantsModule {}

@@ -5,7 +5,8 @@ import { DataSource } from 'typeorm';
 import { connectWithRetry } from './lib/resilient-db';
 import { buildDataSourceOptions } from '../src/database/data-source';
 import { Admin } from '../src/modules/admins/entities/admin.entity';
-import { AdminPermission } from '../src/modules/admins/entities/admin-permission.entity';
+import { AdminRole } from '../src/modules/admins/entities/admin-role.entity';
+import { AdminRolePermission } from '../src/modules/admins/entities/admin-role-permission.entity';
 import { Permission } from '../src/modules/admins/entities/permission.entity';
 import { PasswordService } from '../src/modules/auth/password.service';
 import { UserStatus } from '../src/contract/enums';
@@ -60,17 +61,27 @@ async function main(): Promise<void> {
       return;
     }
 
-    await dataSource.query(
-      `
-        INSERT INTO "admin_permissions" ("adminId", "permissionId")
-        SELECT $1, "id" FROM "permissions"
-        ON CONFLICT DO NOTHING;
-      `,
-      [admin.id],
+    await dataSource.transaction(async (manager) => {
+      await manager.query('SELECT pg_advisory_xact_lock(1757003300)');
+      let role = await manager.findOneBy(AdminRole, { name: 'Super Admin' });
+      if (!role)
+        role = await manager.save(
+          AdminRole,
+          manager.create(AdminRole, {
+            name: 'Super Admin',
+            description: 'Full platform administration.',
+          }),
+        );
+      await manager.upsert(
+        AdminRolePermission,
+        allPermissions.map((permission) => ({ roleId: role.id, permissionId: permission.id })),
+        ['roleId', 'permissionId'],
+      );
+      await manager.update(Admin, admin.id, { roleId: role.id });
+    });
+    process.stdout.write(
+      `${allPermissions.length} permissions granted through the Super Admin role.\n`,
     );
-
-    const granted = await dataSource.getRepository(AdminPermission).count({ where: { adminId: admin.id } });
-    process.stdout.write(`${granted} of ${allPermissions.length} permissions granted.\n`);
   } finally {
     await dataSource.destroy();
   }

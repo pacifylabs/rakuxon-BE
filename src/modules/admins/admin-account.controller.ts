@@ -1,5 +1,21 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiNoContentResponse, ApiOkResponse, ApiOperation, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiNoContentResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
 
 import { AdminAccountService } from './admin-account.service';
 import {
@@ -31,6 +47,13 @@ import type { AuthenticatedAdmin } from '../../common/auth/authenticated-admin-r
 export class AdminAccountController {
   constructor(private readonly account: AdminAccountService) {}
 
+  @Get('permissions')
+  @ApiOperation({ summary: 'Current permissions, including changes to the assigned role' })
+  @ApiOkResponse({ type: [String] })
+  getPermissions(@CurrentAdmin() admin: AuthenticatedAdmin): string[] {
+    return admin.permissions;
+  }
+
   @Get('me')
   @ApiOperation({ summary: "The caller's own account" })
   @ApiOkResponse({ type: AdminAccountDto })
@@ -53,7 +76,10 @@ export class AdminAccountController {
   @ApiOperation({ summary: "Change the caller's own password" })
   @ApiNoContentResponse()
   @ApiUnauthorizedResponse({ description: 'The current password is not correct.' })
-  async changePassword(@CurrentAdmin() admin: AuthenticatedAdmin, @Body() dto: ChangeAdminPasswordDto): Promise<void> {
+  async changePassword(
+    @CurrentAdmin() admin: AuthenticatedAdmin,
+    @Body() dto: ChangeAdminPasswordDto,
+  ): Promise<void> {
     await this.account.changePassword(admin.id, dto);
   }
 
@@ -61,7 +87,8 @@ export class AdminAccountController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Start 2FA setup',
-    description: 'Generates a secret and returns a QR code to scan. 2FA is not on yet — call .../2fa/enable with a code from the app to confirm it.',
+    description:
+      'Generates a secret and returns a QR code to scan. 2FA is not on yet — call .../2fa/enable with a code from the app to confirm it.',
   })
   @ApiOkResponse({ type: TotpSetupDto })
   async setupTotp(@CurrentAdmin() admin: AuthenticatedAdmin): Promise<TotpSetupDto> {
@@ -70,10 +97,16 @@ export class AdminAccountController {
 
   @Post('me/2fa/enable')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Confirm 2FA setup and turn it on', description: 'Returns one-time backup codes — shown only this once.' })
+  @ApiOperation({
+    summary: 'Confirm 2FA setup and turn it on',
+    description: 'Returns one-time backup codes — shown only this once.',
+  })
   @ApiOkResponse({ type: TotpEnabledDto })
   @ApiUnauthorizedResponse({ description: 'The code is not valid.' })
-  async enableTotp(@CurrentAdmin() admin: AuthenticatedAdmin, @Body() dto: VerifyTotpDto): Promise<TotpEnabledDto> {
+  async enableTotp(
+    @CurrentAdmin() admin: AuthenticatedAdmin,
+    @Body() dto: VerifyTotpDto,
+  ): Promise<TotpEnabledDto> {
     return this.account.verifyAndEnableTotp(admin.id, dto.code);
   }
 
@@ -82,7 +115,10 @@ export class AdminAccountController {
   @ApiOperation({ summary: 'Turn 2FA off' })
   @ApiNoContentResponse()
   @ApiUnauthorizedResponse({ description: 'The current password is not correct.' })
-  async disableTotp(@CurrentAdmin() admin: AuthenticatedAdmin, @Body() dto: DisableTotpDto): Promise<void> {
+  async disableTotp(
+    @CurrentAdmin() admin: AuthenticatedAdmin,
+    @Body() dto: DisableTotpDto,
+  ): Promise<void> {
     await this.account.disableTotp(admin.id, dto.password);
   }
 

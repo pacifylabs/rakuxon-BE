@@ -20,8 +20,10 @@ import { ApplicationStatus } from '../../../contract/enums';
 @ForeignKey('students', ['studentId'], ['id'], { name: 'applications_studentId_fkey', onDelete: 'CASCADE' })
 @ForeignKey('courses', ['courseId'], ['id'], { name: 'applications_courseId_fkey', onDelete: 'CASCADE' })
 @ForeignKey('institutions', ['institutionId'], ['id'], { name: 'applications_institutionId_fkey', onDelete: 'CASCADE' })
+@ForeignKey('admins', ['assignedAdminId'], ['id'], { name: 'applications_assignedAdminId_fkey', onDelete: 'SET NULL' })
 @Index('applications_student_idx', ['studentId'])
 @Index('applications_tenant_idx', ['tenantId'])
+@Index('applications_assignedAdminId_idx', ['assignedAdminId'])
 export class Application {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -44,6 +46,10 @@ export class Application {
 
   @Column({ type: 'timestamptz', nullable: true })
   submittedAt!: Date | null;
+
+  /** The admin currently working this application — not who reviews it, just who owns it. */
+  @Column({ type: 'uuid', nullable: true })
+  assignedAdminId!: string | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;

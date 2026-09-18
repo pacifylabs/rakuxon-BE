@@ -1,151 +1,218 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
-
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { DataSource, EntityManager, In } from 'typeorm';
 import type { AdminSummaryDto, CreateAdminDto, PermissionDto } from './dto/admin.dto';
+import type { AdminRoleSummaryDto, SaveAdminRoleDto } from './dto/admin-role.dto';
 import { Admin } from './entities/admin.entity';
 import { AdminPermission } from './entities/admin-permission.entity';
+import { AdminRole } from './entities/admin-role.entity';
+import { AdminRolePermission } from './entities/admin-role-permission.entity';
 import { Permission } from './entities/permission.entity';
+import { adminPermissionKeys } from './admin-access';
 import { UserStatus } from '../../contract/enums';
 import { PasswordService } from '../auth/password.service';
 
 @Injectable()
 export class AdminsService {
   constructor(
-    @InjectRepository(Admin) private readonly admins: Repository<Admin>,
-    @InjectRepository(AdminPermission) private readonly adminPermissions: Repository<AdminPermission>,
-    @InjectRepository(Permission) private readonly permissions: Repository<Permission>,
+    private readonly dataSource: DataSource,
     private readonly passwords: PasswordService,
   ) {}
 
   async listPermissionsCatalog(): Promise<PermissionDto[]> {
-    const rows = await this.permissions.find({ order: { key: 'ASC' } });
-    return rows.map((row) => ({ key: row.key, description: row.description }));
+    return this.dataSource.getRepository(Permission).find({ order: { key: 'ASC' } });
   }
 
   async create(dto: CreateAdminDto): Promise<AdminSummaryDto> {
-    if (await this.admins.exist({ where: { email: dto.email } })) {
-      throw new ConflictException('That email is already registered as an admin.');
-    }
-
-    const permissionRows = await this.resolvePermissionKeys(dto.permissionKeys);
-    const passwordHash = await this.passwords.hash(dto.password);
-
-    const saved = await this.admins.save(
-      this.admins.create({
-        email: dto.email,
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        passwordHash,
-        status: UserStatus.Active,
-      }),
-    );
-
-    if (permissionRows.length > 0) {
-      await this.adminPermissions.save(
-        permissionRows.map((permission) =>
-          this.adminPermissions.create({ adminId: saved.id, permissionId: permission.id }),
-        ),
+    if ((dto.roleId === undefined) === (dto.permissionKeys === undefined)) {
+      throw new BadRequestException(
+        'Choose one role. Do not combine a role with individual permissions.',
       );
     }
-
-    return this.toSummary(saved, permissionRows.map((permission) => permission.key));
+    if (dto.roleId === null || dto.permissionKeys === null) {
+      throw new BadRequestException('A role or legacy permission list cannot be null.');
+    }
+    const passwordHash = await this.passwords.hash(dto.password);
+    return this.mutate(async (m) => {
+      if (await m.existsBy(Admin, { email: dto.email }))
+        throw new ConflictException('That email is already registered as an admin.');
+      if (dto.roleId) await this.getRole(m, dto.roleId);
+      const permissions = await this.resolvePermissions(m, dto.permissionKeys ?? []);
+      const admin = await m.save(
+        Admin,
+        m.create(Admin, {
+          email: dto.email,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          passwordHash,
+          status: UserStatus.Active,
+          roleId: dto.roleId ?? null,
+        }),
+      );
+      if (permissions.length)
+        await m.insert(
+          AdminPermission,
+          permissions.map((p) => ({ adminId: admin.id, permissionId: p.id })),
+        );
+      return this.summary(m, admin);
+    });
   }
 
   async list(): Promise<AdminSummaryDto[]> {
-    const rows = await this.admins.find({ order: { createdAt: 'ASC' } });
-    if (rows.length === 0) return [];
-
-    const grants = await this.adminPermissions
-      .createQueryBuilder('ap')
-      .innerJoin(Permission, 'permission', 'permission.id = ap."permissionId"')
-      .where('ap."adminId" IN (:...ids)', { ids: rows.map((row) => row.id) })
-      .select(['ap."adminId" AS "adminId"', 'permission.key AS "key"'])
-      .getRawMany<{ adminId: string; key: string }>();
-
-    const keysByAdmin = new Map<string, string[]>();
-    for (const grant of grants) {
-      const existing = keysByAdmin.get(grant.adminId) ?? [];
-      existing.push(grant.key);
-      keysByAdmin.set(grant.adminId, existing);
-    }
-
-    return rows.map((row) => this.toSummary(row, keysByAdmin.get(row.id) ?? []));
+    const m = this.dataSource.manager;
+    return Promise.all(
+      (await m.find(Admin, { order: { createdAt: 'ASC' } })).map((a) => this.summary(m, a)),
+    );
   }
 
   async updatePermissions(id: string, permissionKeys: string[]): Promise<AdminSummaryDto> {
-    const admin = await this.getOrThrow(id);
-    const permissionRows = await this.resolvePermissionKeys(permissionKeys);
-
-    /* Replace-set: simplest correct semantics for "set this admin's
-       permissions to exactly this list." */
-    await this.adminPermissions.delete({ adminId: id });
-    if (permissionRows.length > 0) {
-      await this.adminPermissions.save(
-        permissionRows.map((permission) =>
-          this.adminPermissions.create({ adminId: id, permissionId: permission.id }),
-        ),
-      );
-    }
-
-    return this.toSummary(admin, permissionRows.map((permission) => permission.key));
+    return this.mutate(async (m) => {
+      const admin = await this.getAdmin(m, id);
+      if (admin.roleId)
+        throw new ConflictException(
+          'This admin uses a role. Edit that role or assign another role.',
+        );
+      const permissions = await this.resolvePermissions(m, permissionKeys);
+      await m.delete(AdminPermission, { adminId: id });
+      if (permissions.length)
+        await m.insert(
+          AdminPermission,
+          permissions.map((p) => ({ adminId: id, permissionId: p.id })),
+        );
+      return this.summary(m, admin);
+    });
   }
 
-  async suspend(id: string): Promise<AdminSummaryDto> {
+  async assignRole(id: string, roleId: string): Promise<AdminSummaryDto> {
+    return this.mutate(async (m) => {
+      const admin = await this.getAdmin(m, id);
+      await this.getRole(m, roleId);
+      admin.roleId = roleId;
+      await m.save(admin);
+      await m.delete(AdminPermission, { adminId: id });
+      return this.summary(m, admin);
+    });
+  }
+
+  async listRoles(): Promise<AdminRoleSummaryDto[]> {
+    const m = this.dataSource.manager;
+    return Promise.all(
+      (await m.find(AdminRole, { order: { name: 'ASC' } })).map((r) => this.roleSummary(m, r)),
+    );
+  }
+
+  async saveRole(dto: SaveAdminRoleDto, id?: string): Promise<AdminRoleSummaryDto> {
+    return this.mutate(async (m) => {
+      const role = id ? await this.getRole(m, id) : m.create(AdminRole);
+      const duplicate = await m.findOneBy(AdminRole, { name: dto.name });
+      if (duplicate && duplicate.id !== id)
+        throw new ConflictException('A role with that name already exists.');
+      const permissions = await this.resolvePermissions(m, dto.permissionKeys);
+      role.name = dto.name;
+      role.description = dto.description;
+      const saved = await m.save(role);
+      await m.delete(AdminRolePermission, { roleId: saved.id });
+      if (permissions.length)
+        await m.insert(
+          AdminRolePermission,
+          permissions.map((p) => ({ roleId: saved.id, permissionId: p.id })),
+        );
+      return this.roleSummary(m, saved);
+    });
+  }
+
+  async deleteRole(id: string): Promise<void> {
+    return this.mutate(async (m) => {
+      await this.getRole(m, id);
+      if (await m.existsBy(Admin, { roleId: id }))
+        throw new ConflictException('Reassign every admin using this role before deleting it.');
+      await m.delete(AdminRole, id);
+    });
+  }
+
+  suspend(id: string): Promise<AdminSummaryDto> {
     return this.setStatus(id, UserStatus.Suspended);
   }
-
-  async reactivate(id: string): Promise<AdminSummaryDto> {
+  reactivate(id: string): Promise<AdminSummaryDto> {
     return this.setStatus(id, UserStatus.Active);
   }
 
   private async setStatus(id: string, status: UserStatus): Promise<AdminSummaryDto> {
-    const admin = await this.getOrThrow(id);
-    admin.status = status;
-    const saved = await this.admins.save(admin);
-    const keys = (await this.resolveGrantedKeys(id));
-    return this.toSummary(saved, keys);
+    return this.mutate(async (m) => {
+      const admin = await this.getAdmin(m, id);
+      admin.status = status;
+      await m.save(admin);
+      return this.summary(m, admin);
+    });
   }
 
-  private async resolveGrantedKeys(adminId: string): Promise<string[]> {
-    const rows = await this.permissions
-      .createQueryBuilder('permission')
-      .innerJoin('admin_permissions', 'ap', 'ap."permissionId" = permission.id')
-      .where('ap."adminId" = :adminId', { adminId })
-      .select('permission.key', 'key')
-      .getRawMany<{ key: string }>();
-
-    return rows.map((row) => row.key);
+  /** Serialize access changes so concurrent edits cannot remove the final manager. */
+  private async mutate<T>(work: (m: EntityManager) => Promise<T>): Promise<T> {
+    return this.dataSource.transaction(async (m) => {
+      await m.query('SELECT pg_advisory_xact_lock(1757003300)');
+      const hadManager = await this.hasManager(m);
+      const result = await work(m);
+      if (hadManager && !(await this.hasManager(m)))
+        throw new ConflictException(
+          'Keep at least one active admin with the admins.manage permission.',
+        );
+      return result;
+    });
   }
 
-  private async resolvePermissionKeys(keys: string[]): Promise<Permission[]> {
-    if (keys.length === 0) return [];
+  private async hasManager(m: EntityManager): Promise<boolean> {
+    const admins = await m.findBy(Admin, { status: UserStatus.Active });
+    for (const admin of admins)
+      if ((await adminPermissionKeys(m, admin.id)).includes('admins.manage')) return true;
+    return false;
+  }
 
-    const rows = await this.permissions.find({ where: { key: In(keys) } });
-    const found = new Set(rows.map((row) => row.key));
-    const unknown = keys.filter((key) => !found.has(key));
-
-    if (unknown.length > 0) {
-      throw new BadRequestException(`Unknown permission key${unknown.length > 1 ? 's' : ''}: ${unknown.join(', ')}.`);
-    }
-
+  private async resolvePermissions(m: EntityManager, keys: string[]): Promise<Permission[]> {
+    const rows = keys.length ? await m.findBy(Permission, { key: In(keys) }) : [];
+    const found = new Set(rows.map((p) => p.key));
+    if (keys.some((k) => !found.has(k))) throw new BadRequestException('Unknown permission key.');
     return rows;
   }
 
-  private async getOrThrow(id: string): Promise<Admin> {
-    const admin = await this.admins.findOne({ where: { id } });
+  private async getAdmin(m: EntityManager, id: string): Promise<Admin> {
+    const admin = await m.findOneBy(Admin, { id });
     if (!admin) throw new NotFoundException('No admin with that id.');
     return admin;
   }
 
-  private toSummary(admin: Admin, permissions: string[]): AdminSummaryDto {
+  private async getRole(m: EntityManager, id: string): Promise<AdminRole> {
+    const role = await m.findOneBy(AdminRole, { id });
+    if (!role) throw new NotFoundException('No role with that id.');
+    return role;
+  }
+
+  private async roleSummary(m: EntityManager, role: AdminRole): Promise<AdminRoleSummaryDto> {
+    const permissions: { key: string }[] = await m.query(
+      'SELECT p.key FROM permissions p JOIN admin_role_permissions rp ON rp."permissionId" = p.id WHERE rp."roleId" = $1 ORDER BY p.key',
+      [role.id],
+    );
+    return {
+      id: role.id,
+      name: role.name,
+      description: role.description,
+      permissions: permissions.map((p) => p.key),
+      adminCount: await m.countBy(Admin, { roleId: role.id }),
+    };
+  }
+
+  private async summary(m: EntityManager, admin: Admin): Promise<AdminSummaryDto> {
     return {
       id: admin.id,
       email: admin.email,
       firstName: admin.firstName,
       lastName: admin.lastName,
       status: admin.status,
-      permissions,
+      permissions: await adminPermissionKeys(m, admin.id),
+      role: admin.roleId ? await this.roleSummary(m, await this.getRole(m, admin.roleId)) : null,
       createdAt: admin.createdAt.toISOString(),
     };
   }

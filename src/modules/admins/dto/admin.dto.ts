@@ -1,7 +1,10 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { AdminRoleSummaryDto } from './admin-role.dto';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ArrayUnique,
   IsArray,
+  IsOptional,
+  IsUUID,
   IsEmail,
   IsNotEmpty,
   IsString,
@@ -33,18 +36,29 @@ export class CreateAdminDto {
   @ApiProperty({
     example: 'correct-horse-battery',
     minLength: PASSWORD_MIN,
-    description: 'Set directly by the creating admin. The new admin can change it via the password-reset flow.',
+    description:
+      'Set directly by the creating admin. The new admin can change it via the password-reset flow.',
   })
   @IsString()
   @MinLength(PASSWORD_MIN)
   @MaxLength(256)
   password!: string;
 
-  @ApiProperty({ type: [String], example: ['tenants.view'], description: 'Permission keys to grant on creation.' })
+  @ApiPropertyOptional({ type: String, format: 'uuid', description: 'Assign one reusable role.' })
+  @IsOptional()
+  @IsUUID()
+  roleId?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    deprecated: true,
+    description: 'Legacy clients only. Cannot be combined with roleId.',
+  })
+  @IsOptional()
   @IsArray()
   @ArrayUnique()
   @IsString({ each: true })
-  permissionKeys!: string[];
+  permissionKeys?: string[];
 }
 
 export class UpdateAdminPermissionsDto {
@@ -60,6 +74,9 @@ export class UpdateAdminPermissionsDto {
 }
 
 export class AdminSummaryDto {
+  @ApiProperty({ type: AdminRoleSummaryDto, nullable: true })
+  role!: AdminRoleSummaryDto | null;
+
   @ApiProperty({ type: String, format: 'uuid' })
   id!: string;
 

@@ -11,7 +11,7 @@ import type { INestApplication } from '@nestjs/common';
  * `persistAuthorization` keeps a pasted bearer token across page reloads, which
  * is the difference between Swagger being usable for manual testing and not.
  */
-export function setupSwagger(app: INestApplication): void {
+export function setupSwagger(app: INestApplication) {
   const config = new DocumentBuilder()
     .setTitle('Rakuxon API')
     .setDescription(
@@ -55,4 +55,5 @@ export function setupSwagger(app: INestApplication): void {
     jsonDocumentUrl: 'docs-json',
     swaggerOptions: { persistAuthorization: true, tagsSorter: 'alpha', operationsSorter: 'alpha' },
   });
+  return document;
 }

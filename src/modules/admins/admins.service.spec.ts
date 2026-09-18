@@ -1,7 +1,5 @@
-import { Test } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
 import { BadRequestException, ConflictException } from '@nestjs/common';
-
+import { DataSource, EntityManager } from 'typeorm';
 import { AdminsService } from './admins.service';
 import { Admin } from './entities/admin.entity';
 import { AdminPermission } from './entities/admin-permission.entity';
@@ -9,121 +7,87 @@ import { Permission } from './entities/permission.entity';
 import { UserStatus } from '../../contract/enums';
 import { PasswordService } from '../auth/password.service';
 
-/**
- * Covers permission-key resolution and the replace-set semantics of
- * updatePermissions directly. `list()`'s query-builder join is exercised by
- * the e2e suite instead, against a real database.
- */
 describe('AdminsService', () => {
-  const admins = {
-    exist: jest.fn(),
-    save: jest.fn((entity: unknown) => ({ id: 'a-1', createdAt: new Date('2026-01-01'), ...(entity as object) })),
-    create: jest.fn((entity: unknown) => entity),
-    findOne: jest.fn(),
-  };
-
-  const adminPermissions = {
-    save: jest.fn(),
-    create: jest.fn((entity: unknown) => entity),
-    delete: jest.fn(),
-  };
-
-  const permissions = {
-    find: jest.fn(),
-  };
-
   let service: AdminsService;
-
-  beforeEach(async () => {
+  const admin = {
+    id: 'a-1',
+    email: 'x@example.com',
+    firstName: 'A',
+    lastName: 'B',
+    status: UserStatus.Active,
+    roleId: null,
+    createdAt: new Date(),
+  };
+  let granted: { key: string }[];
+  const m = {
+    existsBy: jest.fn(),
+    findBy: jest.fn(),
+    findOneBy: jest.fn(),
+    create: jest.fn((_entity, value) => value),
+    save: jest.fn((_entity, value) => ({ ...admin, ...value })),
+    insert: jest.fn(),
+    delete: jest.fn(),
+    query: jest.fn(),
+  };
+  const body = {
+    email: 'new@example.com',
+    firstName: 'A',
+    lastName: 'B',
+    password: 'correct-horse-battery',
+    permissionKeys: ['tenants.view'],
+  };
+  beforeEach(() => {
     jest.clearAllMocks();
-
-    const moduleRef = await Test.createTestingModule({
-      providers: [
-        AdminsService,
-        { provide: getRepositoryToken(Admin), useValue: admins },
-        { provide: getRepositoryToken(AdminPermission), useValue: adminPermissions },
-        { provide: getRepositoryToken(Permission), useValue: permissions },
-        PasswordService,
-      ],
-    }).compile();
-
-    service = moduleRef.get(AdminsService);
+    granted = [];
+    m.existsBy.mockResolvedValue(false);
+    m.findBy.mockImplementation(async (entity) =>
+      entity === Admin ? [] : [{ id: 'p-1', key: 'tenants.view' }],
+    );
+    m.findOneBy.mockResolvedValue(admin);
+    m.query.mockImplementation(async (sql) => (sql.includes('pg_advisory') ? [] : granted));
+    m.insert.mockImplementation(async () => {
+      granted = [{ key: 'tenants.view' }];
+    });
+    m.delete.mockImplementation(async () => {
+      granted = [];
+    });
+    const db = {
+      transaction: (fn: (manager: EntityManager) => unknown) => fn(m as unknown as EntityManager),
+    };
+    service = new AdminsService(db as DataSource, new PasswordService());
   });
-
-  describe('create', () => {
-    it('rejects a duplicate email before touching permissions', async () => {
-      admins.exist.mockResolvedValue(true);
-
-      await expect(
-        service.create({
-          email: 'dup@example.com',
-          firstName: 'A',
-          lastName: 'B',
-          password: 'correct-horse-battery',
-          permissionKeys: [],
-        }),
-      ).rejects.toThrow(ConflictException);
-
-      expect(permissions.find).not.toHaveBeenCalled();
-    });
-
-    it('rejects an unknown permission key and never creates the admin', async () => {
-      admins.exist.mockResolvedValue(false);
-      permissions.find.mockResolvedValue([]);
-
-      await expect(
-        service.create({
-          email: 'new@example.com',
-          firstName: 'A',
-          lastName: 'B',
-          password: 'correct-horse-battery',
-          permissionKeys: ['not-a-real-permission'],
-        }),
-      ).rejects.toThrow(BadRequestException);
-
-      expect(admins.save).not.toHaveBeenCalled();
-    });
-
-    it('creates the admin and grants exactly the resolved permissions', async () => {
-      admins.exist.mockResolvedValue(false);
-      permissions.find.mockResolvedValue([{ id: 'p-1', key: 'tenants.view' }]);
-
-      const result = await service.create({
-        email: 'new@example.com',
-        firstName: 'A',
-        lastName: 'B',
-        password: 'correct-horse-battery',
-        permissionKeys: ['tenants.view'],
-      });
-
-      expect(result.permissions).toEqual(['tenants.view']);
-      expect(result.status).toBe(UserStatus.Active);
-      expect(adminPermissions.save).toHaveBeenCalledWith([
-        expect.objectContaining({ adminId: 'a-1', permissionId: 'p-1' }),
-      ]);
-    });
+  it('rejects a duplicate email before resolving permissions', async () => {
+    m.existsBy.mockResolvedValue(true);
+    await expect(service.create(body)).rejects.toThrow(ConflictException);
+    expect(m.findBy).not.toHaveBeenCalledWith(Permission, expect.anything());
   });
-
-  describe('updatePermissions', () => {
-    it('deletes the existing set before inserting the new one — replace, not additive', async () => {
-      admins.findOne.mockResolvedValue({ id: 'a-1', email: 'x@example.com', firstName: 'A', lastName: 'B', status: UserStatus.Active, createdAt: new Date() });
-      permissions.find.mockResolvedValue([{ id: 'p-2', key: 'catalogue.view' }]);
-
-      const result = await service.updatePermissions('a-1', ['catalogue.view']);
-
-      expect(adminPermissions.delete).toHaveBeenCalledWith({ adminId: 'a-1' });
-      expect(result.permissions).toEqual(['catalogue.view']);
-    });
-
-    it('leaves the admin with no permissions when given an empty list', async () => {
-      admins.findOne.mockResolvedValue({ id: 'a-1', email: 'x@example.com', firstName: 'A', lastName: 'B', status: UserStatus.Active, createdAt: new Date() });
-      permissions.find.mockResolvedValue([]);
-
-      const result = await service.updatePermissions('a-1', []);
-
-      expect(adminPermissions.delete).toHaveBeenCalledWith({ adminId: 'a-1' });
-      expect(adminPermissions.save).not.toHaveBeenCalled();
-      expect(result.permissions).toEqual([]);
-    });
+  it('rejects an unknown permission key without creating the admin', async () => {
+    m.findBy.mockResolvedValue([]);
+    await expect(service.create(body)).rejects.toThrow(BadRequestException);
+    expect(m.save).not.toHaveBeenCalled();
+  });
+  it('creates the admin with exactly the resolved permissions', async () => {
+    const result = await service.create(body);
+    expect(result.permissions).toEqual(['tenants.view']);
+    expect(result.status).toBe(UserStatus.Active);
+    expect(m.insert).toHaveBeenCalledWith(AdminPermission, [
+      { adminId: 'a-1', permissionId: 'p-1' },
+    ]);
+  });
+  it('replaces direct grants instead of adding to them', async () => {
+    granted = [{ key: 'catalogue.view' }];
+    const result = await service.updatePermissions('a-1', ['tenants.view']);
+    expect(m.delete).toHaveBeenCalledWith(AdminPermission, { adminId: 'a-1' });
+    expect(m.delete.mock.invocationCallOrder[0]).toBeLessThan(
+      m.insert.mock.invocationCallOrder[0]!,
+    );
+    expect(result.permissions).toEqual(['tenants.view']);
+  });
+  it('clears all direct grants when given an empty list', async () => {
+    granted = [{ key: 'catalogue.view' }];
+    const result = await service.updatePermissions('a-1', []);
+    expect(m.delete).toHaveBeenCalledWith(AdminPermission, { adminId: 'a-1' });
+    expect(m.insert).not.toHaveBeenCalled();
+    expect(result.permissions).toEqual([]);
   });
 });

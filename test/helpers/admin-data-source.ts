@@ -78,7 +78,7 @@ export async function truncateAll(): Promise<void> {
          is never truncated. */
       '"refresh_tokens", "users", "students", "documents", "applications", ' +
       '"application_documents", "notifications", "tenants", "admins", "admin_refresh_tokens", ' +
-      '"admin_password_reset_tokens", "admin_permissions" CASCADE',
+      '"admin_password_reset_tokens", "admin_permissions", "admin_roles", "admin_role_permissions", "audit_log" CASCADE',
   );
 
   /*

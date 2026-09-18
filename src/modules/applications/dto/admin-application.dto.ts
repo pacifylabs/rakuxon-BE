@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, Matches, Max, Min } from 'class-validator';
+import { IsEnum, IsInt, IsOptional, IsUUID, Matches, Max, Min, ValidateIf } from 'class-validator';
 
 import { ApplicationStatus, DocumentType } from '../../../contract/enums';
 
@@ -61,6 +61,17 @@ export class AdminApplicationSummaryDto {
   @ApiProperty({ enum: ApplicationStatus, enumName: 'ApplicationStatus' }) status!: ApplicationStatus;
   @ApiProperty({ type: String, format: 'date-time', nullable: true }) submittedAt!: string | null;
   @ApiProperty({ type: String, format: 'date-time' }) createdAt!: string;
+  @ApiProperty({ type: String, format: 'uuid', nullable: true }) assignedAdminId!: string | null;
+  @ApiProperty({ type: String, nullable: true }) assignedAdminName!: string | null;
+}
+
+/** `adminId: null` unassigns — the same "assign to no one" a caseworker leaving the team needs. */
+export class AssignApplicationDto {
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
+  @ValidateIf((_, value) => value !== null)
+  @IsOptional()
+  @IsUUID()
+  adminId!: string | null;
 }
 
 export class AdminApplicationListDto {
