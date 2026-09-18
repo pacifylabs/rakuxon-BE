@@ -25,6 +25,7 @@ import { TenantsService } from './tenants.service';
 import { AdminJwtAuthGuard } from '../../common/auth/admin-jwt-auth.guard';
 import { Public } from '../../common/auth/public.decorator';
 import { AuditResource } from '../audit-log/audit-resource.decorator';
+import { ResourceAuditLogDto } from '../audit-log/dto/audit-log.dto';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { PermissionGuard } from '../../common/rbac/permission.guard';
 import { RequirePermission } from '../../common/rbac/require-permission.decorator';
@@ -81,7 +82,8 @@ export class TenantsController {
   @Get(':id/audit-log')
   @RequirePermission('tenants.view')
   @ApiOperation({ summary: "This partner's own history — every admin action on it" })
-  async auditLogFor(@Param('id') id: string) {
+  @ApiOkResponse({ type: ResourceAuditLogDto })
+  async auditLogFor(@Param('id') id: string): Promise<ResourceAuditLogDto> {
     return { items: await this.auditLog.listForResource('tenant', id) };
   }
 

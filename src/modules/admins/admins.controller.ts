@@ -33,6 +33,7 @@ import {
 import { AdminJwtAuthGuard } from '../../common/auth/admin-jwt-auth.guard';
 import { Public } from '../../common/auth/public.decorator';
 import { AuditResource } from '../audit-log/audit-resource.decorator';
+import { ResourceAuditLogDto } from '../audit-log/dto/audit-log.dto';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { PermissionGuard } from '../../common/rbac/permission.guard';
 import { RequirePermission } from '../../common/rbac/require-permission.decorator';
@@ -96,7 +97,8 @@ export class AdminsController {
   @Get(':id/audit-log')
   @RequirePermission('admins.manage')
   @ApiOperation({ summary: "This admin's own history — every action taken on their account" })
-  async auditLogFor(@Param('id', ParseUUIDPipe) id: string) {
+  @ApiOkResponse({ type: ResourceAuditLogDto })
+  async auditLogFor(@Param('id', ParseUUIDPipe) id: string): Promise<ResourceAuditLogDto> {
     return { items: await this.auditLog.listForResource('admin', id) };
   }
 

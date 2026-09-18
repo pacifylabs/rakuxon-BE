@@ -52,3 +52,8 @@ export class AuditLogListDto {
   @ApiProperty() page!: number;
   @ApiProperty() pageCount!: number;
 }
+
+/** One resource's own history — unpaginated, since a single application/student/tenant/admin's trail is never long enough to need it. */
+export class ResourceAuditLogDto {
+  @ApiProperty({ type: [AuditLogEntryDto] }) items!: AuditLogEntryDto[];
+}
