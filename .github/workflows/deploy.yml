@@ -31,5 +31,5 @@ jobs:
           chmod 600 ~/.ssh/rakuxon_deploy ~/.ssh/known_hosts
           trap 'rm -f ~/.ssh/rakuxon_deploy' EXIT
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
-            -o ConnectTimeout=15 -o ServerAliveInterval=30 \
+            -o ConnectTimeout=15 -o ConnectionAttempts=3 -o ServerAliveInterval=30 \
             -i ~/.ssh/rakuxon_deploy "root@$VPS_HOST" "backend $DEPLOY_SHA"
