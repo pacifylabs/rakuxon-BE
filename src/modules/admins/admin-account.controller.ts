@@ -71,6 +71,17 @@ export class AdminAccountController {
     return this.toDto(await this.account.updateProfile(admin.id, dto));
   }
 
+  @Post('me/heartbeat')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Record that the caller is currently active',
+    description: 'Polled by the frontend every ~60s while a session is open — drives the "online" indicator in messaging.',
+  })
+  @ApiNoContentResponse()
+  async heartbeat(@CurrentAdmin() admin: AuthenticatedAdmin): Promise<void> {
+    await this.account.heartbeat(admin.id);
+  }
+
   @Post('me/password')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: "Change the caller's own password" })

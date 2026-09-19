@@ -126,11 +126,20 @@ describe('messaging', () => {
         .expect(200);
       const conversationId = started.body.id as string;
 
+      await dataSource.query('UPDATE conversations SET "updatedAt" = $1 WHERE id = $2', [
+        new Date('2020-01-01T00:00:00Z'), conversationId,
+      ]);
+
       await request(app.getHttpServer())
         .post(`/v1/admin/messages/conversations/${conversationId}/reply`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ body: 'Admin reply.' })
         .expect(200);
+
+      const [activeConversation] = await dataSource.query(
+        'SELECT "updatedAt" FROM conversations WHERE id = $1', [conversationId],
+      );
+      expect(new Date(activeConversation.updatedAt).getTime()).toBeGreaterThan(Date.now() - 60_000);
 
       const reply = await request(app.getHttpServer())
         .post(`/v1/messages/conversations/${conversationId}/reply`)
@@ -291,4 +300,41 @@ describe('messaging', () => {
       expect(draftOnlyList.body).toHaveLength(0);
     });
   });
+    it('shows counterpart presence after authenticated heartbeats', async () => {
+      const session = await registerStudent();
+      const { token: adminToken, adminId } = await seedAdminSession(app, ['applications.manage']);
+      await assignedApplication(session, adminToken, adminId);
+
+      const before = await request(app.getHttpServer())
+        .get('/v1/messages/assigned-admins')
+        .set('Authorization', `Bearer ${session.accessToken}`).expect(200);
+      expect(before.body.find((row: { id: string }) => row.id === adminId).online).toBe(false);
+
+      await request(app.getHttpServer()).post('/v1/admin/account/me/heartbeat')
+        .set('Authorization', `Bearer ${adminToken}`).expect(204);
+      await request(app.getHttpServer()).post('/v1/students/me/heartbeat')
+        .set('Authorization', `Bearer ${session.accessToken}`).expect(204);
+
+      const after = await request(app.getHttpServer())
+        .get('/v1/messages/assigned-admins')
+        .set('Authorization', `Bearer ${session.accessToken}`).expect(200);
+      expect(after.body.find((row: { id: string }) => row.id === adminId).online).toBe(true);
+
+      const started = await request(app.getHttpServer())
+        .post('/v1/messages/conversations')
+        .set('Authorization', `Bearer ${session.accessToken}`)
+        .send({ adminId, body: 'Presence check.' }).expect(200);
+      expect(started.body.counterpartOnline).toBe(true);
+      const detail = await request(app.getHttpServer())
+        .get(`/v1/admin/messages/conversations/${started.body.id}`)
+        .set('Authorization', `Bearer ${adminToken}`).expect(200);
+      expect(detail.body.counterpartOnline).toBe(true);
+    });
+
+    it('rejects unauthenticated presence updates', async () => {
+      await request(app.getHttpServer()).post('/v1/admin/account/me/heartbeat').expect(401);
+      await request(app.getHttpServer()).post('/v1/students/me/heartbeat').expect(401);
+    });
+
+
 });

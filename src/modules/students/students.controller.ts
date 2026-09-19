@@ -1,5 +1,5 @@
-import { Body, Controller, Get, Patch } from '@nestjs/common';
-import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post } from '@nestjs/common';
+import { ApiBearerAuth, ApiNoContentResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { StudentProfileDto, UpdateStudentProfileDto } from './dto/student.dto';
 import { StudentsService } from './students.service';
@@ -36,6 +36,18 @@ export class StudentsController {
     @Body() dto: UpdateStudentProfileDto,
   ): Promise<StudentProfileDto> {
     return this.toDto(await this.students.updateOwnProfile(user, dto));
+  }
+
+  @Post('me/heartbeat')
+  @Roles(Role.Student)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Record that the caller is currently active',
+    description: 'Polled by the frontend every ~60s while a session is open — drives the "online" indicator in messaging.',
+  })
+  @ApiNoContentResponse()
+  async heartbeat(@CurrentUser() user: AuthenticatedUser): Promise<void> {
+    await this.students.heartbeat(user);
   }
 
   private toDto(student: Awaited<ReturnType<StudentsService['getOwnProfile']>>): StudentProfileDto {

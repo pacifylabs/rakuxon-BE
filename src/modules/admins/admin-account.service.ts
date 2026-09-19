@@ -32,6 +32,11 @@ export class AdminAccountService {
     return this.getOrThrow(adminId);
   }
 
+  /** A cheap, frequent poll — updates `lastSeenAt` only, never a full entity save. */
+  async heartbeat(adminId: string): Promise<void> {
+    await this.admins.update({ id: adminId }, { lastSeenAt: new Date() });
+  }
+
   async updateProfile(adminId: string, patch: UpdateAdminProfileDto): Promise<Admin> {
     const admin = await this.getOrThrow(adminId);
     Object.assign(admin, definedEntries(patch));

@@ -29,6 +29,7 @@ import { NOTIFICATION_PORT } from '../../common/notifications/notification.port'
 import type { NotificationPort } from '../../common/notifications/notification.port';
 import { NotificationTemplatesService } from '../notification-templates/notification-templates.service';
 import { NotificationsInboxService } from '../notifications-inbox/notifications-inbox.service';
+import { isOnline } from '../../common/presence/presence';
 import { Role } from '../../contract/enums';
 import { Student } from '../students/entities/student.entity';
 import { StudentsService } from '../students/students.service';
@@ -68,14 +69,22 @@ export class MessagingService {
   /** Every admin currently assigned across the student's own applications — who they're allowed to start a thread with. */
   async myAssignedAdmins(user: AuthenticatedUser): Promise<AssignedAdminDto[]> {
     const student = await this.students.getOwnProfile(user);
-    return this.conversations.manager.query<AssignedAdminDto[]>(
-      `SELECT DISTINCT a.id, a."firstName", a."lastName"
+    const rows = await this.conversations.manager.query<
+      { id: string; firstName: string; lastName: string; lastSeenAt: Date | null }[]
+    >(
+      `SELECT DISTINCT a.id, a."firstName", a."lastName", a."lastSeenAt"
          FROM applications app
          JOIN admins a ON a.id = app."assignedAdminId"
         WHERE app."studentId" = $1 AND app."assignedAdminId" IS NOT NULL
         ORDER BY a."firstName"`,
       [student.id],
     );
+    return rows.map((row) => ({
+      id: row.id,
+      firstName: row.firstName,
+      lastName: row.lastName,
+      online: isOnline(row.lastSeenAt ? new Date(row.lastSeenAt) : null),
+    }));
   }
 
   async startAsStudent(user: AuthenticatedUser, dto: StartConversationDto): Promise<ConversationDetailDto> {
@@ -195,7 +204,7 @@ export class MessagingService {
     const message = await this.messages.save(
       this.messages.create({ conversationId: conversation.id, senderType, body }),
     );
-    await this.conversations.save(conversation); // touches updatedAt, so the list sorts by recency
+    await this.conversations.update(conversation.id, { updatedAt: new Date() });
     await this.notifyNewMessage(conversation, senderType, body);
     return message;
   }
@@ -268,20 +277,45 @@ export class MessagingService {
     return conversation;
   }
 
-  private async counterpartNames(
+  private async counterpartInfo(
     rows: Conversation[],
     viewer: 'student' | 'admin',
-  ): Promise<Map<string, string>> {
+  ): Promise<Map<string, { name: string; online: boolean }>> {
     if (viewer === 'student') {
       const adminIds = [...new Set(rows.map((row) => row.adminId))];
       const admins = await this.conversations.manager.findBy(Admin, { id: In(adminIds) });
-      const nameByAdminId = new Map(admins.map((admin) => [admin.id, `${admin.firstName} ${admin.lastName}`]));
-      return new Map(rows.map((row) => [row.id, nameByAdminId.get(row.adminId) ?? 'Admin']));
+      const infoByAdminId = new Map(
+        admins.map((admin) => [
+          admin.id,
+          { name: `${admin.firstName} ${admin.lastName}`, online: isOnline(admin.lastSeenAt) },
+        ]),
+      );
+      return new Map(
+        rows.map((row) => [row.id, infoByAdminId.get(row.adminId) ?? { name: 'Admin', online: false }]),
+      );
     }
 
     const studentIds = [...new Set(rows.map((row) => row.studentId))];
-    const summaries = await this.students.getSummariesForAdmin(studentIds);
-    return new Map(rows.map((row) => [row.id, summaries.get(row.studentId)?.fullName ?? 'Student']));
+    const [summaries, presenceRows] = await Promise.all([
+      this.students.getSummariesForAdmin(studentIds),
+      this.conversations.manager.query<{ id: string; lastSeenAt: Date | null }[]>(
+        `SELECT s.id, u."lastSeenAt" FROM students s JOIN users u ON u.id = s."userId" WHERE s.id = ANY($1)`,
+        [studentIds],
+      ),
+    ]);
+    const onlineByStudentId = new Map(
+      presenceRows.map((row) => [row.id, isOnline(row.lastSeenAt ? new Date(row.lastSeenAt) : null)]),
+    );
+
+    return new Map(
+      rows.map((row) => [
+        row.id,
+        {
+          name: summaries.get(row.studentId)?.fullName ?? 'Student',
+          online: onlineByStudentId.get(row.studentId) ?? false,
+        },
+      ]),
+    );
   }
 
   private async toSummaries(rows: Conversation[], viewer: 'student' | 'admin'): Promise<ConversationSummaryDto[]> {
@@ -291,7 +325,7 @@ export class MessagingService {
     const otherType: MessageSenderType = viewer === 'student' ? 'admin' : 'student';
 
     const [counterparts, lastMessages, unreadRows] = await Promise.all([
-      this.counterpartNames(rows, viewer),
+      this.counterpartInfo(rows, viewer),
       this.conversations.manager.query<{ conversationId: string; body: string; createdAt: Date }[]>(
         `SELECT DISTINCT ON ("conversationId") "conversationId", body, "createdAt"
            FROM messages WHERE "conversationId" = ANY($1)
@@ -311,9 +345,11 @@ export class MessagingService {
 
     return rows.map((row) => {
       const last = lastByConversation.get(row.id);
+      const counterpart = counterparts.get(row.id);
       return {
         id: row.id,
-        counterpartName: counterparts.get(row.id) ?? 'Unknown',
+        counterpartName: counterpart?.name ?? 'Unknown',
+        counterpartOnline: counterpart?.online ?? false,
         lastMessage: last?.body ?? null,
         lastMessageAt: last ? new Date(last.createdAt).toISOString() : null,
         unreadCount: unreadByConversation.get(row.id) ?? 0,
@@ -331,12 +367,14 @@ export class MessagingService {
 
     const [messages, counterparts] = await Promise.all([
       this.messages.find({ where: { conversationId: conversation.id }, order: { createdAt: 'ASC' } }),
-      this.counterpartNames([conversation], viewer),
+      this.counterpartInfo([conversation], viewer),
     ]);
+    const counterpart = counterparts.get(conversation.id);
 
     return {
       id: conversation.id,
-      counterpartName: counterparts.get(conversation.id) ?? (viewer === 'student' ? 'Admin' : 'Student'),
+      counterpartName: counterpart?.name ?? (viewer === 'student' ? 'Admin' : 'Student'),
+      counterpartOnline: counterpart?.online ?? false,
       messages: messages.map((message) => ({
         id: message.id,
         senderType: message.senderType,

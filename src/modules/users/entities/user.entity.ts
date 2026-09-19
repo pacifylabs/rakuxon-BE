@@ -51,6 +51,10 @@ export class User {
   @Column({ type: 'timestamptz', nullable: true })
   emailVerifiedAt!: Date | null;
 
+  /** Bumped by a polling heartbeat while a session is active — see `common/presence`. Not "last login." */
+  @Column({ type: 'timestamptz', nullable: true })
+  lastSeenAt!: Date | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;
 

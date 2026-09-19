@@ -52,6 +52,10 @@ export class Admin {
   @Column({ type: 'boolean', default: false })
   totpEnabled!: boolean;
 
+  /** Bumped by a polling heartbeat while a session is active — see `common/presence`. Not "last login." */
+  @Column({ type: 'timestamptz', nullable: true })
+  lastSeenAt!: Date | null;
+
   /** SHA-256 hashes of unused one-time backup codes — never the codes themselves. */
   @Column({ type: 'text', array: true, default: () => "'{}'", select: false })
   totpBackupCodesHash!: string[];

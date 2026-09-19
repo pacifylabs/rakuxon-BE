@@ -23,6 +23,8 @@ export class MessageDto {
 export class ConversationSummaryDto {
   @ApiProperty() id!: string;
   @ApiProperty() counterpartName!: string;
+  @ApiProperty({ description: 'Seen in the last two minutes, via their own polling heartbeat.' })
+  counterpartOnline!: boolean;
   @ApiPropertyOptional({ type: String, nullable: true }) lastMessage!: string | null;
   @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true }) lastMessageAt!: string | null;
   @ApiProperty() unreadCount!: number;
@@ -31,6 +33,8 @@ export class ConversationSummaryDto {
 export class ConversationDetailDto {
   @ApiProperty() id!: string;
   @ApiProperty() counterpartName!: string;
+  @ApiProperty({ description: 'Seen in the last two minutes, via their own polling heartbeat.' })
+  counterpartOnline!: boolean;
   @ApiProperty({ type: [MessageDto] }) messages!: MessageDto[];
 }
 
@@ -48,6 +52,8 @@ export class AssignedAdminDto {
   @ApiProperty({ type: String, format: 'uuid' }) id!: string;
   @ApiProperty() firstName!: string;
   @ApiProperty() lastName!: string;
+  @ApiProperty({ description: 'Seen in the last two minutes, via their own polling heartbeat.' })
+  online!: boolean;
 }
 
 export type ComposeScope = 'student' | 'tenant' | 'status' | 'all';

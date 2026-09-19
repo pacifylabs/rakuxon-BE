@@ -91,6 +91,11 @@ export class StudentsService {
     await adminSetPassword(this.dataSource, student.userId, passwordHash);
   }
 
+  /** A cheap, frequent poll — updates `lastSeenAt` only, never a full entity save. */
+  async heartbeat(user: AuthenticatedUser): Promise<void> {
+    await this.users.update({ id: user.id }, { lastSeenAt: new Date() });
+  }
+
   async getOwnProfile(user: AuthenticatedUser): Promise<Student> {
     const student = await this.students.findOne({
       where: { userId: user.id, tenantId: user.tenantId ?? undefined },
