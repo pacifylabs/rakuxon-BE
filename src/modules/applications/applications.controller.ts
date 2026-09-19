@@ -96,6 +96,7 @@ export class ApplicationsController {
       attachedDocumentIds: entry.attachedDocumentIds,
       missingDocumentTypes: entry.missingDocumentTypes,
       readyToSubmit: entry.readyToSubmit,
+      assignedAdminName: entry.assignedAdminName,
       createdAt: entry.application.createdAt.toISOString(),
     };
   }

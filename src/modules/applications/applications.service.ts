@@ -56,6 +56,7 @@ export interface ApplicationWithGates {
   attachedDocumentIds: string[];
   missingDocumentTypes: DocumentType[];
   readyToSubmit: boolean;
+  assignedAdminName: string | null;
 }
 
 @Injectable()
@@ -335,7 +336,40 @@ export class ApplicationsService {
     await this.logStudentAction(user, saved.id, 'application.submit', 'Submitted the application.');
     await this.notifyApplicationSubmitted(saved);
 
+    if (!saved.assignedAdminId) {
+      const assigned = await this.autoAssign(saved);
+      if (assigned) return assigned;
+    }
+
     return this.withGates(saved);
+  }
+
+  /**
+   * Picks the least-loaded admin in the "Success Manager" pool — any active
+   * admin whose role is flagged `isSuccessManagerPool` in Roles & Permissions
+   * — and hands the case to `assign()`, which owns the actual write and the
+   * assignment notification. "Loaded" is simply how many applications are
+   * currently assigned to them: with only `draft`/`submitted` as statuses
+   * today, nothing ever leaves that count, so it is already an "open cases"
+   * count without needing a status filter.
+   *
+   * Returns `null` (leaving the application unassigned) when the pool is
+   * empty — a missing Success Manager role is a setup gap to fix in Roles &
+   * Permissions, not a reason to fail the submission that triggered this.
+   */
+  private async autoAssign(application: Application): Promise<ApplicationWithGates | null> {
+    const [candidate] = await this.applications.manager.query<{ id: string }[]>(
+      `SELECT a.id
+         FROM admins a
+         JOIN admin_roles r ON r.id = a."roleId"
+        WHERE r."isSuccessManagerPool" = true AND a.status = $1
+        ORDER BY (SELECT COUNT(*) FROM applications app WHERE app."assignedAdminId" = a.id) ASC, a.id ASC
+        LIMIT 1`,
+      [UserStatus.Active],
+    );
+    if (!candidate) return null;
+
+    return this.assign(application.id, candidate.id);
   }
 
   /**
@@ -445,11 +479,16 @@ export class ApplicationsService {
     const attachedTypes = new Set(attached.map((document) => document.type));
     const missingDocumentTypes = REQUIRED_DOCUMENT_TYPES.filter((type) => !attachedTypes.has(type));
 
+    const admin = application.assignedAdminId
+      ? await this.applications.manager.findOne(Admin, { where: { id: application.assignedAdminId } })
+      : null;
+
     return {
       application,
       attachedDocumentIds,
       missingDocumentTypes,
       readyToSubmit: missingDocumentTypes.length === 0,
+      assignedAdminName: admin ? `${admin.firstName} ${admin.lastName}` : null,
     };
   }
 

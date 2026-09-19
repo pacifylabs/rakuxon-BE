@@ -17,6 +17,10 @@ export class AdminRole {
   @Column({ type: 'text', default: '' })
   description!: string;
 
+  /** Eligible for automatic case assignment on submit — see `ApplicationsService.autoAssign()`. */
+  @Column({ type: 'boolean', default: false })
+  isSuccessManagerPool!: boolean;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;
 

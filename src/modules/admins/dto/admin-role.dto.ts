@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { ArrayUnique, IsArray, IsNotEmpty, IsString, IsUUID, MaxLength } from 'class-validator';
+import { ArrayUnique, IsArray, IsBoolean, IsNotEmpty, IsString, IsUUID, MaxLength } from 'class-validator';
 
 export class SaveAdminRoleDto {
   @ApiProperty({ example: 'Customer Support' })
@@ -20,6 +20,13 @@ export class SaveAdminRoleDto {
   @ArrayUnique()
   @IsString({ each: true })
   permissionKeys!: string[];
+
+  @ApiProperty({
+    default: false,
+    description: 'Eligible for automatic case assignment when a student submits an application.',
+  })
+  @IsBoolean()
+  isSuccessManagerPool!: boolean;
 }
 
 export class AssignAdminRoleDto {
@@ -39,4 +46,6 @@ export class AdminRoleSummaryDto {
   permissions!: string[];
   @ApiProperty()
   adminCount!: number;
+  @ApiProperty()
+  isSuccessManagerPool!: boolean;
 }

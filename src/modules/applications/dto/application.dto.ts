@@ -39,6 +39,13 @@ export class ApplicationDto {
   @ApiProperty({ description: 'Whether the profile and document gates are both satisfied.' })
   readyToSubmit!: boolean;
 
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'The success manager assigned to this case, once one is — manually or automatically on submit.',
+  })
+  assignedAdminName!: string | null;
+
   @ApiProperty({ type: String, format: 'date-time' })
   createdAt!: string;
 }

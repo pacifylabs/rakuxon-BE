@@ -41,6 +41,7 @@ describe('reusable admin roles', () => {
     name: 'Customer Support',
     description: 'Student support team',
     permissionKeys: ['tenants.view'],
+    isSuccessManagerPool: false,
   };
   const createRole = async () => (await api().post('/roles').send(roleBody).expect(201)).body;
 
@@ -101,7 +102,7 @@ describe('reusable admin roles', () => {
     const empty = (
       await api()
         .post('/roles')
-        .send({ name: 'No access', description: '', permissionKeys: [] })
+        .send({ name: 'No access', description: '', permissionKeys: [], isSuccessManagerPool: false })
         .expect(201)
     ).body;
     await api().patch(`/${target.adminId}/role`).send({ roleId: empty.id }).expect(200);
@@ -168,7 +169,7 @@ describe('reusable admin roles', () => {
     const other = (
       await api()
         .post('/roles')
-        .send({ name: 'Viewer', description: '', permissionKeys: [] })
+        .send({ name: 'Viewer', description: '', permissionKeys: [], isSuccessManagerPool: false })
         .expect(201)
     ).body;
     await api().patch(`/${id}/role`).send({ roleId: other.id }).expect(409);

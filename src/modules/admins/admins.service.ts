@@ -114,6 +114,7 @@ export class AdminsService {
       const permissions = await this.resolvePermissions(m, dto.permissionKeys);
       role.name = dto.name;
       role.description = dto.description;
+      role.isSuccessManagerPool = dto.isSuccessManagerPool;
       const saved = await m.save(role);
       await m.delete(AdminRolePermission, { roleId: saved.id });
       if (permissions.length)
@@ -201,6 +202,7 @@ export class AdminsService {
       description: role.description,
       permissions: permissions.map((p) => p.key),
       adminCount: await m.countBy(Admin, { roleId: role.id }),
+      isSuccessManagerPool: role.isSuccessManagerPool,
     };
   }
 

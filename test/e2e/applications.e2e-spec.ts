@@ -3,8 +3,13 @@ import request from 'supertest';
 import { DataSource } from 'typeorm';
 
 import { CapturingNotifications, createTestApp, truncateIdentity } from '../helpers/create-test-app';
-import { DocumentStatus, DocumentType } from '../../src/contract/enums';
+import { seedAdminSession } from '../helpers/seed-admin';
+import { DocumentStatus, DocumentType, UserStatus } from '../../src/contract/enums';
+import { Admin } from '../../src/modules/admins/entities/admin.entity';
+import { AdminRole } from '../../src/modules/admins/entities/admin-role.entity';
+import { PasswordService } from '../../src/modules/auth/password.service';
 import { Document } from '../../src/modules/documents/entities/document.entity';
+import { Application } from '../../src/modules/applications/entities/application.entity';
 import { Notification } from '../../src/modules/notifications-inbox/entities/notification.entity';
 import { Student } from '../../src/modules/students/entities/student.entity';
 
@@ -459,6 +464,129 @@ describe('applications', () => {
         .post(`/v1/applications/${created.body.id}/documents/${extraDocument.id}`)
         .set('Authorization', `Bearer ${session.accessToken}`)
         .expect(409);
+    });
+  });
+
+  describe('auto-assignment to the Success Manager pool, on submit', () => {
+    async function createPoolAdmin(firstName: string): Promise<Admin> {
+      const role = await dataSource.getRepository(AdminRole).save(
+        dataSource.getRepository(AdminRole).create({
+          name: `SM pool ${Math.random().toString(36).slice(2, 8)}`,
+          isSuccessManagerPool: true,
+        }),
+      );
+      return dataSource.getRepository(Admin).save(
+        dataSource.getRepository(Admin).create({
+          email: `sm-${Math.random().toString(36).slice(2, 8)}@example.com`,
+          firstName,
+          lastName: 'Manager',
+          passwordHash: await new PasswordService().hash('correct-horse-battery'),
+          status: UserStatus.Active,
+          roleId: role.id,
+        }),
+      );
+    }
+
+    /** Registers a fresh student, completes their profile and documents, creates and attaches, then submits. */
+    async function submitReadyApplication(): Promise<{ body: Record<string, unknown> }> {
+      const session = await registerStudent();
+      await completeProfileAndDocuments(session.accessToken, session.user.id);
+      const student = await dataSource.getRepository(Student).findOneOrFail({ where: { userId: session.user.id } });
+      const uploaded = await dataSource.getRepository(Document).find({ where: { studentId: student.id } });
+
+      const created = await request(app.getHttpServer())
+        .post('/v1/applications')
+        .set('Authorization', `Bearer ${session.accessToken}`)
+        .send({ courseId: publishedCourseId })
+        .expect(201);
+
+      for (const document of uploaded) {
+        await request(app.getHttpServer())
+          .post(`/v1/applications/${created.body.id}/documents/${document.id}`)
+          .set('Authorization', `Bearer ${session.accessToken}`)
+          .expect(200);
+      }
+
+      return request(app.getHttpServer())
+        .post(`/v1/applications/${created.body.id}/submit`)
+        .set('Authorization', `Bearer ${session.accessToken}`)
+        .expect(200);
+    }
+
+    /* First in the block, deliberately: every other test in here creates a
+       pool admin that outlives its own `it()` (no truncation between them),
+       so this is the only point at which the pool is actually empty. */
+    it('leaves the application unassigned when the pool is empty', async () => {
+      const submitted = await submitReadyApplication();
+      expect(submitted.body.assignedAdminName).toBeNull();
+    });
+
+    it('assigns to the only admin in the pool, and reports their name back to the student', async () => {
+      const admin = await createPoolAdmin('Solo');
+
+      const submitted = await submitReadyApplication();
+
+      expect(submitted.body.assignedAdminName).toBe('Solo Manager');
+      const row = await dataSource
+        .getRepository(Application)
+        .findOneOrFail({ where: { id: submitted.body.id as string } });
+      expect(row.assignedAdminId).toBe(admin.id);
+    });
+
+    it('picks the least-loaded admin in the pool', async () => {
+      const busy = await createPoolAdmin('Busy');
+      const givenToBusy = await submitReadyApplication();
+      expect(givenToBusy.body.assignedAdminName).toBe('Busy Manager'); // busy is the only candidate so far
+
+      const free = await createPoolAdmin('Free'); // now 1-loaded (busy) vs 0-loaded (free)
+
+      const submitted = await submitReadyApplication();
+
+      expect(submitted.body.assignedAdminName).toBe('Free Manager');
+      const row = await dataSource
+        .getRepository(Application)
+        .findOneOrFail({ where: { id: submitted.body.id as string } });
+      expect(row.assignedAdminId).toBe(free.id);
+      expect(row.assignedAdminId).not.toBe(busy.id);
+    });
+
+    it('leaves a manually pre-assigned application alone', async () => {
+      await createPoolAdmin('Pool'); // a non-empty pool — proves auto-assign was skipped, not just unavailable
+      const { token: adminToken, adminId: preAssignedAdminId } = await seedAdminSession(app, [
+        'applications.manage',
+      ]);
+
+      const session = await registerStudent();
+      await completeProfileAndDocuments(session.accessToken, session.user.id);
+      const student = await dataSource.getRepository(Student).findOneOrFail({ where: { userId: session.user.id } });
+      const uploaded = await dataSource.getRepository(Document).find({ where: { studentId: student.id } });
+
+      const created = await request(app.getHttpServer())
+        .post('/v1/applications')
+        .set('Authorization', `Bearer ${session.accessToken}`)
+        .send({ courseId: publishedCourseId })
+        .expect(201);
+
+      for (const document of uploaded) {
+        await request(app.getHttpServer())
+          .post(`/v1/applications/${created.body.id}/documents/${document.id}`)
+          .set('Authorization', `Bearer ${session.accessToken}`)
+          .expect(200);
+      }
+
+      await request(app.getHttpServer())
+        .patch(`/v1/admin/applications/${created.body.id}/assign`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ adminId: preAssignedAdminId })
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .post(`/v1/applications/${created.body.id}/submit`)
+        .set('Authorization', `Bearer ${session.accessToken}`)
+        .expect(200);
+
+      const row = await dataSource.getRepository(Application).findOneOrFail({ where: { id: created.body.id } });
+      expect(row.assignedAdminId).toBe(preAssignedAdminId);
     });
   });
 });
