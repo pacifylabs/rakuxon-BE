@@ -48,6 +48,13 @@ export interface CaseAssignedMessage {
   reviewUrl: string;
 }
 
+export interface NewMessageMessage {
+  to: string;
+  fromName: string;
+  preview: string;
+  reviewUrl: string;
+}
+
 export interface NotificationPort {
   sendPasswordReset(message: PasswordResetMessage): Promise<void>;
   sendEmailVerification(message: EmailVerificationMessage): Promise<void>;
@@ -55,6 +62,7 @@ export interface NotificationPort {
   sendDocumentApproved(message: DocumentApprovedMessage): Promise<void>;
   sendApplicationSubmitted(message: ApplicationSubmittedMessage): Promise<void>;
   sendCaseAssigned(message: CaseAssignedMessage): Promise<void>;
+  sendNewMessage(message: NewMessageMessage): Promise<void>;
 }
 
 export const NOTIFICATION_PORT = Symbol('NOTIFICATION_PORT');

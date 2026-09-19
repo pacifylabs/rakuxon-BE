@@ -19,6 +19,7 @@ import { CatalogueModule } from './modules/catalogue/catalogue.module';
 import { AdminDashboardModule } from './modules/dashboard/admin-dashboard.module';
 import { DestinationsModule } from './modules/destinations/destinations.module';
 import { DocumentsModule } from './modules/documents/documents.module';
+import { MessagingModule } from './modules/messaging/messaging.module';
 import { NotificationsInboxModule } from './modules/notifications-inbox/notifications-inbox.module';
 import { NotificationTemplatesModule } from './modules/notification-templates/notification-templates.module';
 import { OnboardingLinksModule } from './modules/onboarding-links/onboarding-links.module';
@@ -41,6 +42,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
     StudentsModule,
     NotificationsInboxModule,
     NotificationTemplatesModule,
+    MessagingModule,
     DocumentsModule,
     ApplicationsModule,
     AuditLogModule,

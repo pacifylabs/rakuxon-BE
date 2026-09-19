@@ -8,6 +8,7 @@ import { caseAssignedEmail } from './templates/case-assigned.template';
 import { documentApprovedEmail } from './templates/document-approved.template';
 import { documentRejectedEmail } from './templates/document-rejected.template';
 import { emailVerificationEmail } from './templates/email-verification.template';
+import { newMessageEmail } from './templates/new-message.template';
 import { passwordResetEmail } from './templates/password-reset.template';
 import { MAIL_TRANSPORT } from './mail-transport';
 import type { MailTransport } from './mail-transport';
@@ -17,6 +18,7 @@ import type {
   DocumentApprovedMessage,
   DocumentRejectedMessage,
   EmailVerificationMessage,
+  NewMessageMessage,
   NotificationPort,
   NotificationTemplateRenderer,
   PasswordResetMessage,
@@ -97,6 +99,15 @@ export class SmtpNotificationAdapter implements NotificationPort {
         reviewUrl: message.reviewUrl,
       },
       () => caseAssignedEmail(message),
+    );
+    await this.send(message.to, subject, html, text);
+  }
+
+  async sendNewMessage(message: NewMessageMessage): Promise<void> {
+    const { subject, html, text } = await this.templates.renderEmail(
+      'new_message',
+      { fromName: message.fromName, preview: message.preview, reviewUrl: message.reviewUrl },
+      () => newMessageEmail(message),
     );
     await this.send(message.to, subject, html, text);
   }

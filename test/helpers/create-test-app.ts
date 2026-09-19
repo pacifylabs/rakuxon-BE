@@ -10,6 +10,7 @@ import type {
   DocumentApprovedMessage,
   DocumentRejectedMessage,
   EmailVerificationMessage,
+  NewMessageMessage,
   NotificationPort,
   PasswordResetMessage,
 } from '../../src/common/notifications/notification.port';
@@ -28,6 +29,7 @@ export class CapturingNotifications implements NotificationPort {
   readonly documentApprovals: DocumentApprovedMessage[] = [];
   readonly applicationSubmissions: ApplicationSubmittedMessage[] = [];
   readonly caseAssignments: CaseAssignedMessage[] = [];
+  readonly newMessages: NewMessageMessage[] = [];
 
   async sendPasswordReset(message: PasswordResetMessage): Promise<void> {
     this.passwordResets.push(message);
@@ -51,6 +53,10 @@ export class CapturingNotifications implements NotificationPort {
 
   async sendCaseAssigned(message: CaseAssignedMessage): Promise<void> {
     this.caseAssignments.push(message);
+  }
+
+  async sendNewMessage(message: NewMessageMessage): Promise<void> {
+    this.newMessages.push(message);
   }
 
   /** The token out of the most recent reset link for an address. */
