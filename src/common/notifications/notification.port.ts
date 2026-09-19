@@ -31,11 +31,28 @@ export interface DocumentApprovedMessage {
   reviewUrl: string;
 }
 
+export interface ApplicationSubmittedMessage {
+  to: string;
+  courseName: string;
+  institutionName: string;
+  reviewUrl: string;
+}
+
+export interface CaseAssignedMessage {
+  to: string;
+  studentName: string;
+  courseName: string;
+  institutionName: string;
+  reviewUrl: string;
+}
+
 export interface NotificationPort {
   sendPasswordReset(message: PasswordResetMessage): Promise<void>;
   sendEmailVerification(message: EmailVerificationMessage): Promise<void>;
   sendDocumentRejected(message: DocumentRejectedMessage): Promise<void>;
   sendDocumentApproved(message: DocumentApprovedMessage): Promise<void>;
+  sendApplicationSubmitted(message: ApplicationSubmittedMessage): Promise<void>;
+  sendCaseAssigned(message: CaseAssignedMessage): Promise<void>;
 }
 
 export const NOTIFICATION_PORT = Symbol('NOTIFICATION_PORT');

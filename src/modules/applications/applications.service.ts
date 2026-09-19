@@ -3,7 +3,9 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -15,16 +17,23 @@ import { ApplicationDocument } from './entities/application-document.entity';
 import { Application } from './entities/application.entity';
 import { Course } from '../catalogue/entities/course.entity';
 import { Institution } from '../catalogue/entities/institution.entity';
+import { ENV } from '../../common/config/config.module';
+import { appUrlForRole } from '../../common/config/env.schema';
+import type { Env } from '../../common/config/env.schema';
+import { NOTIFICATION_PORT } from '../../common/notifications/notification.port';
+import type { NotificationPort } from '../../common/notifications/notification.port';
 import {
   ApplicationStatus,
   DocumentStatus,
   DocumentType,
   IntakeStatus,
   PublishStatus,
+  Role,
   UserStatus,
 } from '../../contract/enums';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { DocumentsService } from '../documents/documents.service';
+import { NotificationsInboxService } from '../notifications-inbox/notifications-inbox.service';
 import { StudentsService } from '../students/students.service';
 import { Tenant } from '../tenants/entities/tenant.entity';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-request';
@@ -50,6 +59,8 @@ export interface ApplicationWithGates {
 
 @Injectable()
 export class ApplicationsService {
+  private readonly logger = new Logger('Notifications');
+
   constructor(
     @InjectRepository(Application) private readonly applications: Repository<Application>,
     @InjectRepository(ApplicationDocument)
@@ -60,6 +71,9 @@ export class ApplicationsService {
     private readonly students: StudentsService,
     private readonly documents: DocumentsService,
     private readonly auditLog: AuditLogService,
+    private readonly inbox: NotificationsInboxService,
+    @Inject(NOTIFICATION_PORT) private readonly notifications: NotificationPort,
+    @Inject(ENV) private readonly env: Env,
   ) {}
 
   private async logStudentAction(
@@ -169,9 +183,47 @@ export class ApplicationsService {
    */
   async assign(applicationId: string, adminId: string | null): Promise<ApplicationWithGates> {
     const application = await this.applicationById(applicationId);
+    const previousAdminId = application.assignedAdminId;
     application.assignedAdminId = adminId;
     const saved = await this.applications.save(application);
+
+    if (adminId && adminId !== previousAdminId) {
+      await this.notifyCaseAssigned(saved, adminId);
+    }
+
     return this.withGates(saved);
+  }
+
+  /** In-app + best-effort email to the newly-assigned admin only — reassigning to the same admin, or unassigning, notifies no one. */
+  private async notifyCaseAssigned(application: Application, adminId: string): Promise<void> {
+    const admin = await this.applications.manager.findOne(Admin, { where: { id: adminId } });
+    if (!admin) return;
+
+    const [studentDetail, { courseName, institutionName }] = await Promise.all([
+      this.students.getAdminDetail(application.studentId),
+      this.courseAndInstitutionNames(application),
+    ]);
+    const reviewUrl = `${appUrlForRole(this.env, Role.PlatformAdmin)}/dashboard/applications/${application.id}`;
+
+    await this.inbox.create({
+      adminId: admin.id,
+      type: 'case_assigned',
+      title: 'A case was assigned to you',
+      body: `${studentDetail.fullName}'s application for ${courseName} at ${institutionName} is now yours.`,
+      link: `/dashboard/applications/${application.id}`,
+    });
+
+    try {
+      await this.notifications.sendCaseAssigned({
+        to: admin.email,
+        studentName: studentDetail.fullName,
+        courseName,
+        institutionName,
+        reviewUrl,
+      });
+    } catch (error) {
+      this.logger.warn(`Could not send case-assigned email to ${admin.email}: ${String(error)}`);
+    }
   }
 
   /** Name-only, for an "assign to" picker — `admins.manage`'s full admin list is a higher trust tier than assigning needs. */
@@ -273,8 +325,57 @@ export class ApplicationsService {
     application.submittedAt = new Date();
     const saved = await this.applications.save(application);
     await this.logStudentAction(user, saved.id, 'application.submit', 'Submitted the application.');
+    await this.notifyApplicationSubmitted(saved);
 
     return this.withGates(saved);
+  }
+
+  /**
+   * In-app + best-effort email to the student, mirroring
+   * `DocumentsService.reject()`'s own "never fails the parent action"
+   * shape — a submission that succeeded but failed to notify is still a
+   * submission that succeeded.
+   */
+  private async notifyApplicationSubmitted(application: Application): Promise<void> {
+    const [studentDetail, { courseName, institutionName }] = await Promise.all([
+      this.students.getAdminDetail(application.studentId),
+      this.courseAndInstitutionNames(application),
+    ]);
+    const reviewUrl = `${appUrlForRole(this.env, Role.Student)}/dashboard/applications/${application.id}`;
+
+    await this.inbox.create({
+      userId: studentDetail.userId,
+      type: 'application_submitted',
+      title: 'Application submitted',
+      body: `Your application for ${courseName} at ${institutionName} has been submitted.`,
+      link: `/dashboard/applications/${application.id}`,
+    });
+
+    try {
+      await this.notifications.sendApplicationSubmitted({
+        to: studentDetail.email,
+        courseName,
+        institutionName,
+        reviewUrl,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Could not send application-submitted email to ${studentDetail.email}: ${String(error)}`,
+      );
+    }
+  }
+
+  private async courseAndInstitutionNames(
+    application: Application,
+  ): Promise<{ courseName: string; institutionName: string }> {
+    const [course, institution] = await Promise.all([
+      this.courses.findOne({ where: { id: application.courseId } }),
+      this.institutions.findOne({ where: { id: application.institutionId } }),
+    ]);
+    return {
+      courseName: course?.title ?? 'their course',
+      institutionName: institution?.name ?? 'the institution',
+    };
   }
 
   private async ownedApplication(user: AuthenticatedUser, id: string): Promise<Application> {

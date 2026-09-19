@@ -2,14 +2,16 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 
-import { createTestApp, truncateIdentity } from '../helpers/create-test-app';
+import { CapturingNotifications, createTestApp, truncateIdentity } from '../helpers/create-test-app';
 import { seedAdminSession } from '../helpers/seed-admin';
 import { DocumentStatus, DocumentType } from '../../src/contract/enums';
 import { Document } from '../../src/modules/documents/entities/document.entity';
+import { Notification } from '../../src/modules/notifications-inbox/entities/notification.entity';
 
 describe('admin: applications', () => {
   let app: INestApplication;
   let dataSource: DataSource;
+  let notifications: CapturingNotifications;
   let applicationId: string;
   let tenantId: string;
   let studentId: string;
@@ -28,7 +30,7 @@ describe('admin: applications', () => {
   }
 
   beforeAll(async () => {
-    ({ app } = await createTestApp());
+    ({ app, notifications } = await createTestApp());
     dataSource = app.get(DataSource);
 
     const session = await registerStudent();
@@ -254,15 +256,25 @@ describe('admin: applications', () => {
     });
 
     it('assigns the application to an admin, and unassigns with adminId: null', async () => {
-      const { token, adminId } = await seedAdminSession(app, ['applications.manage']);
+      const { token } = await seedAdminSession(app, ['applications.manage']);
+      const assignee = await seedAdminSession(app);
 
       const assigned = await request(app.getHttpServer())
         .patch(`/v1/admin/applications/${applicationId}/assign`)
         .set('Authorization', `Bearer ${token}`)
-        .send({ adminId })
+        .send({ adminId: assignee.adminId })
         .expect(200);
-      expect(assigned.body.assignedAdminId).toBe(adminId);
+      expect(assigned.body.assignedAdminId).toBe(assignee.adminId);
       expect(assigned.body.assignedAdminName).toBe('Test Admin');
+
+      const inboxRows = await dataSource
+        .getRepository(Notification)
+        .find({ where: { adminId: assignee.adminId, type: 'case_assigned' } });
+      expect(inboxRows).toHaveLength(1);
+      expect(inboxRows[0]?.link).toBe(`/dashboard/applications/${applicationId}`);
+      expect(
+        notifications.caseAssignments.some((message) => message.to === assignee.email),
+      ).toBe(true);
 
       const unassigned = await request(app.getHttpServer())
         .patch(`/v1/admin/applications/${applicationId}/assign`)
@@ -270,6 +282,33 @@ describe('admin: applications', () => {
         .send({ adminId: null })
         .expect(200);
       expect(unassigned.body.assignedAdminId).toBeNull();
+
+      // Still just the one — unassigning notifies no one.
+      const afterUnassign = await dataSource
+        .getRepository(Notification)
+        .find({ where: { adminId: assignee.adminId, type: 'case_assigned' } });
+      expect(afterUnassign).toHaveLength(1);
+
+      // Reassigning after being unassigned is a real (new) assignment, so it
+      // notifies again — bringing the total to two.
+      await request(app.getHttpServer())
+        .patch(`/v1/admin/applications/${applicationId}/assign`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ adminId: assignee.adminId })
+        .expect(200);
+
+      // But re-saving the same assignment they already hold — a genuine
+      // no-op — sends no further notification.
+      await request(app.getHttpServer())
+        .patch(`/v1/admin/applications/${applicationId}/assign`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ adminId: assignee.adminId })
+        .expect(200);
+
+      const afterReassign = await dataSource
+        .getRepository(Notification)
+        .find({ where: { adminId: assignee.adminId, type: 'case_assigned' } });
+      expect(afterReassign).toHaveLength(2);
     });
 
     it('works on a submitted application too, not just a draft', async () => {

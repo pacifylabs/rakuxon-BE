@@ -5,6 +5,8 @@ import { adminDataSource, truncateAll } from './admin-data-source';
 import { NOTIFICATION_PORT } from '../../src/common/notifications/notification.port';
 import { AppModule } from '../../src/app.module';
 import type {
+  ApplicationSubmittedMessage,
+  CaseAssignedMessage,
   DocumentApprovedMessage,
   DocumentRejectedMessage,
   EmailVerificationMessage,
@@ -24,6 +26,8 @@ export class CapturingNotifications implements NotificationPort {
   readonly emailVerifications: EmailVerificationMessage[] = [];
   readonly documentRejections: DocumentRejectedMessage[] = [];
   readonly documentApprovals: DocumentApprovedMessage[] = [];
+  readonly applicationSubmissions: ApplicationSubmittedMessage[] = [];
+  readonly caseAssignments: CaseAssignedMessage[] = [];
 
   async sendPasswordReset(message: PasswordResetMessage): Promise<void> {
     this.passwordResets.push(message);
@@ -39,6 +43,14 @@ export class CapturingNotifications implements NotificationPort {
 
   async sendDocumentApproved(message: DocumentApprovedMessage): Promise<void> {
     this.documentApprovals.push(message);
+  }
+
+  async sendApplicationSubmitted(message: ApplicationSubmittedMessage): Promise<void> {
+    this.applicationSubmissions.push(message);
+  }
+
+  async sendCaseAssigned(message: CaseAssignedMessage): Promise<void> {
+    this.caseAssignments.push(message);
   }
 
   /** The token out of the most recent reset link for an address. */

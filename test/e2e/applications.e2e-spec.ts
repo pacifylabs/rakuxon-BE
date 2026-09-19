@@ -2,14 +2,16 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 
-import { createTestApp, truncateIdentity } from '../helpers/create-test-app';
+import { CapturingNotifications, createTestApp, truncateIdentity } from '../helpers/create-test-app';
 import { DocumentStatus, DocumentType } from '../../src/contract/enums';
 import { Document } from '../../src/modules/documents/entities/document.entity';
+import { Notification } from '../../src/modules/notifications-inbox/entities/notification.entity';
 import { Student } from '../../src/modules/students/entities/student.entity';
 
 describe('applications', () => {
   let app: INestApplication;
   let dataSource: DataSource;
+  let notifications: CapturingNotifications;
   let accessToken: string;
   let publishedCourseId: string;
   let draftCourseId: string;
@@ -65,7 +67,7 @@ describe('applications', () => {
   }
 
   beforeAll(async () => {
-    ({ app } = await createTestApp());
+    ({ app, notifications } = await createTestApp());
     dataSource = app.get(DataSource);
 
     const session = await registerStudent();
@@ -397,6 +399,15 @@ describe('applications', () => {
 
       expect(submitted.body.status).toBe('submitted');
       expect(submitted.body.submittedAt).not.toBeNull();
+
+      const inboxRows = await dataSource
+        .getRepository(Notification)
+        .find({ where: { userId: session.user.id, type: 'application_submitted' } });
+      expect(inboxRows).toHaveLength(1);
+      expect(inboxRows[0]?.link).toBe(`/dashboard/applications/${created.body.id}`);
+
+      expect(notifications.applicationSubmissions).toHaveLength(1);
+      expect(notifications.applicationSubmissions[0]).toMatchObject({ to: session.user.email });
 
       await request(app.getHttpServer())
         .post(`/v1/applications/${created.body.id}/submit`)

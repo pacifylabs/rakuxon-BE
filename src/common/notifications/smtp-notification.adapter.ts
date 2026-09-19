@@ -2,6 +2,8 @@ import { Inject, Injectable } from '@nestjs/common';
 
 import { ENV } from '../config/config.module';
 import type { Env } from '../config/env.schema';
+import { applicationSubmittedEmail } from './templates/application-submitted.template';
+import { caseAssignedEmail } from './templates/case-assigned.template';
 import { documentApprovedEmail } from './templates/document-approved.template';
 import { documentRejectedEmail } from './templates/document-rejected.template';
 import { emailVerificationEmail } from './templates/email-verification.template';
@@ -9,6 +11,8 @@ import { passwordResetEmail } from './templates/password-reset.template';
 import { MAIL_TRANSPORT } from './mail-transport';
 import type { MailTransport } from './mail-transport';
 import type {
+  ApplicationSubmittedMessage,
+  CaseAssignedMessage,
   DocumentApprovedMessage,
   DocumentRejectedMessage,
   EmailVerificationMessage,
@@ -47,6 +51,16 @@ export class SmtpNotificationAdapter implements NotificationPort {
 
   async sendDocumentApproved(message: DocumentApprovedMessage): Promise<void> {
     const { subject, html, text } = documentApprovedEmail(message);
+    await this.send(message.to, subject, html, text);
+  }
+
+  async sendApplicationSubmitted(message: ApplicationSubmittedMessage): Promise<void> {
+    const { subject, html, text } = applicationSubmittedEmail(message);
+    await this.send(message.to, subject, html, text);
+  }
+
+  async sendCaseAssigned(message: CaseAssignedMessage): Promise<void> {
+    const { subject, html, text } = caseAssignedEmail(message);
     await this.send(message.to, subject, html, text);
   }
 

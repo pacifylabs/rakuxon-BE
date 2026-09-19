@@ -4,6 +4,8 @@ import { ENV } from '../config/config.module';
 import type { Env } from '../config/env.schema';
 
 import type {
+  ApplicationSubmittedMessage,
+  CaseAssignedMessage,
   DocumentApprovedMessage,
   DocumentRejectedMessage,
   EmailVerificationMessage,
@@ -69,6 +71,30 @@ export class LoggingNotificationAdapter implements NotificationPort {
     }
     this.logger.log(
       `Document approved for ${message.to} — ${message.documentType} (${message.reviewUrl})`,
+    );
+  }
+
+  async sendApplicationSubmitted(message: ApplicationSubmittedMessage): Promise<void> {
+    if (this.env.NODE_ENV === 'production') {
+      this.logger.warn(
+        'Application-submitted email was not sent: production email transport is not configured.',
+      );
+      return;
+    }
+    this.logger.log(
+      `Application submitted for ${message.to} — ${message.courseName} at ${message.institutionName} (${message.reviewUrl})`,
+    );
+  }
+
+  async sendCaseAssigned(message: CaseAssignedMessage): Promise<void> {
+    if (this.env.NODE_ENV === 'production') {
+      this.logger.warn(
+        'Case-assigned email was not sent: production email transport is not configured.',
+      );
+      return;
+    }
+    this.logger.log(
+      `Case assigned to ${message.to} — ${message.studentName}, ${message.courseName} at ${message.institutionName} (${message.reviewUrl})`,
     );
   }
 }

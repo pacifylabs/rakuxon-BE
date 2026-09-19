@@ -11,6 +11,7 @@ import { AuditLogModule } from '../audit-log/audit-log.module';
 import { Course } from '../catalogue/entities/course.entity';
 import { Institution } from '../catalogue/entities/institution.entity';
 import { DocumentsModule } from '../documents/documents.module';
+import { NotificationsInboxModule } from '../notifications-inbox/notifications-inbox.module';
 import { StudentsModule } from '../students/students.module';
 import { Tenant } from '../tenants/entities/tenant.entity';
 
@@ -19,6 +20,7 @@ import { Tenant } from '../tenants/entities/tenant.entity';
     TypeOrmModule.forFeature([Application, ApplicationDocument, Course, Institution, Tenant]),
     StudentsModule,
     DocumentsModule,
+    NotificationsInboxModule,
     AdminAuthModule,
     AuditLogModule,
   ],
