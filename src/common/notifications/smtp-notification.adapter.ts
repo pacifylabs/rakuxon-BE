@@ -2,12 +2,14 @@ import { Inject, Injectable } from '@nestjs/common';
 
 import { ENV } from '../config/config.module';
 import type { Env } from '../config/env.schema';
+import { documentApprovedEmail } from './templates/document-approved.template';
 import { documentRejectedEmail } from './templates/document-rejected.template';
 import { emailVerificationEmail } from './templates/email-verification.template';
 import { passwordResetEmail } from './templates/password-reset.template';
 import { MAIL_TRANSPORT } from './mail-transport';
 import type { MailTransport } from './mail-transport';
 import type {
+  DocumentApprovedMessage,
   DocumentRejectedMessage,
   EmailVerificationMessage,
   NotificationPort,
@@ -40,6 +42,11 @@ export class SmtpNotificationAdapter implements NotificationPort {
 
   async sendDocumentRejected(message: DocumentRejectedMessage): Promise<void> {
     const { subject, html, text } = documentRejectedEmail(message);
+    await this.send(message.to, subject, html, text);
+  }
+
+  async sendDocumentApproved(message: DocumentApprovedMessage): Promise<void> {
+    const { subject, html, text } = documentApprovedEmail(message);
     await this.send(message.to, subject, html, text);
   }
 

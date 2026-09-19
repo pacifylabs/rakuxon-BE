@@ -4,6 +4,7 @@ import { ENV } from '../config/config.module';
 import type { Env } from '../config/env.schema';
 
 import type {
+  DocumentApprovedMessage,
   DocumentRejectedMessage,
   EmailVerificationMessage,
   NotificationPort,
@@ -56,6 +57,18 @@ export class LoggingNotificationAdapter implements NotificationPort {
     }
     this.logger.log(
       `Document rejected for ${message.to} — ${message.documentType}: ${message.reason} (${message.reviewUrl})`,
+    );
+  }
+
+  async sendDocumentApproved(message: DocumentApprovedMessage): Promise<void> {
+    if (this.env.NODE_ENV === 'production') {
+      this.logger.warn(
+        'Document-approved email was not sent: production email transport is not configured.',
+      );
+      return;
+    }
+    this.logger.log(
+      `Document approved for ${message.to} — ${message.documentType} (${message.reviewUrl})`,
     );
   }
 }

@@ -71,6 +71,21 @@ describe('SmtpNotificationAdapter', () => {
     expect(sent[0]?.text).toContain('The scan is illegible');
   });
 
+  it('sends a document-approved email carrying the document type and the review link', async () => {
+    const { adapter, sent } = build();
+
+    await adapter.sendDocumentApproved({
+      to: 'ada@example.com',
+      documentType: 'identity',
+      reviewUrl: 'https://app.rakuxon.com/dashboard/documents',
+    });
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ from: 'Rakuxon <no-reply@rakuxon.com>', to: 'ada@example.com' });
+    expect(sent[0]?.html).toContain('identity');
+    expect(sent[0]?.html).toContain('https://app.rakuxon.com/dashboard/documents');
+  });
+
   it('never puts the recipient address in the subject', async () => {
     const { adapter, sent } = build();
     await adapter.sendPasswordReset({

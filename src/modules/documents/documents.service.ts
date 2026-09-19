@@ -185,7 +185,10 @@ export class DocumentsService {
   }
 
   /**
-   * The uploaded documents among the given ids that belong to `studentId`.
+   * The approved documents among the given ids that belong to `studentId` —
+   * this is the submission gate: attaching only ever required `uploaded`,
+   * but counting toward `readyToSubmit` requires an admin to have signed
+   * off on it. See `ApplicationsService.withGates()`.
    *
    * Takes the student row's id directly rather than an `AuthenticatedUser` —
    * a caller that already resolved the student (applications, checking a
@@ -193,11 +196,11 @@ export class DocumentsService {
    * re-derive one from, and `getOwnProfile` looks up by the *user's* id,
    * which `studentId` is not.
    */
-  async findUploadedByStudentId(studentId: string, ids: string[]): Promise<Document[]> {
+  async findApprovedByStudentId(studentId: string, ids: string[]): Promise<Document[]> {
     if (ids.length === 0) return [];
 
     return this.documents.find({
-      where: { id: In(ids), studentId, status: DocumentStatus.Uploaded },
+      where: { id: In(ids), studentId, status: DocumentStatus.Approved },
     });
   }
 
@@ -250,6 +253,47 @@ export class DocumentsService {
       });
     } catch (error) {
       this.logger.warn(`Could not send document-rejected email to ${student.email}: ${String(error)}`);
+    }
+
+    return saved;
+  }
+
+  /**
+   * Approves an uploaded document and tells the student, both ways — same
+   * shape as `reject()`. Approval is what actually counts toward an
+   * application's submission gate (see `ApplicationsService.withGates()`
+   * and `findApprovedByStudentId`); uploading alone only ever made a
+   * document attachable.
+   */
+  async approve(documentId: string, adminId: string): Promise<Document> {
+    const document = await this.documents.findOne({ where: { id: documentId } });
+    if (!document) throw new NotFoundException('No document with that id.');
+
+    document.status = DocumentStatus.Approved;
+    document.rejectionReason = null;
+    document.reviewedAt = new Date();
+    document.reviewedByAdminId = adminId;
+    const saved = await this.documents.save(document);
+
+    const student = await this.students.getAdminDetail(document.studentId);
+    const label = document.type.replace(/_/g, ' ');
+
+    await this.inbox.create({
+      userId: student.userId,
+      type: 'document_approved',
+      title: 'A document was approved',
+      body: `Your ${label} was reviewed and accepted.`,
+      link: '/dashboard/documents',
+    });
+
+    try {
+      await this.notifications.sendDocumentApproved({
+        to: student.email,
+        documentType: label,
+        reviewUrl: `${appUrlForRole(this.env, Role.Student)}/dashboard/documents`,
+      });
+    } catch (error) {
+      this.logger.warn(`Could not send document-approved email to ${student.email}: ${String(error)}`);
     }
 
     return saved;

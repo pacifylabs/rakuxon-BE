@@ -72,6 +72,22 @@ export class AdminDocumentsController {
     return this.toDto(await this.documents.reject(id, dto.reason, admin.id));
   }
 
+  @Post('documents/:id/approve')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Approve an uploaded document',
+    description:
+      'Notifies the student in-app and by email. Approval, not upload, is what an application ' +
+      'submission actually requires.',
+  })
+  @ApiOkResponse({ type: DocumentDto })
+  async approve(
+    @Param('id') id: string,
+    @CurrentAdmin() admin: AuthenticatedAdmin,
+  ): Promise<DocumentDto> {
+    return this.toDto(await this.documents.approve(id, admin.id));
+  }
+
   private toDto(document: Document): DocumentDto {
     return {
       id: document.id,

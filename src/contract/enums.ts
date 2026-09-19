@@ -100,6 +100,7 @@ export enum DocumentType {
 export enum DocumentStatus {
   PendingUpload = 'pending_upload',
   Uploaded = 'uploaded',
+  Approved = 'approved',
   Deleted = 'deleted',
   Rejected = 'rejected',
 }

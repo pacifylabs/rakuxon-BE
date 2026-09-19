@@ -19,11 +19,14 @@ import { PermissionGuard } from '../../common/rbac/permission.guard';
 import { RequirePermission } from '../../common/rbac/require-permission.decorator';
 
 /**
- * Oversight across every tenant, plus the two actions an admin can take on
- * a student's behalf: attaching an admin-uploaded document to a specific
- * draft application, and (elsewhere in this controller, once added)
- * assignment. Full review/decision workflow is still out of scope; see
- * ApplicationStatus's own doc comment. @Public() opts every route out of
+ * Oversight across every tenant, plus the actions an admin can take on a
+ * student's behalf: attaching an admin-uploaded document to a specific
+ * draft application, and assigning who owns working it. Approving or
+ * rejecting the documents themselves lives on `AdminDocumentsController`
+ * instead — a document's review status is independent of which
+ * application(s) it happens to be attached to. Application-level
+ * accept/decline is still out of scope; see ApplicationStatus's own doc
+ * comment. @Public() opts every route out of
  * the global, users-table JwtAuthGuard; AdminJwtAuthGuard + PermissionGuard
  * do the real auth here. The class-level `applications.view` requirement is
  * overridden per-route to `applications.manage` for the two mutations below

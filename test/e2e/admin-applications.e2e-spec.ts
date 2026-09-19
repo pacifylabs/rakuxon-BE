@@ -135,14 +135,14 @@ describe('admin: applications', () => {
   });
 
   describe('attaching a document on the student\'s behalf', () => {
-    async function seedUploadedDocument(): Promise<Document> {
+    async function seedUploadedDocument(status: DocumentStatus = DocumentStatus.Uploaded): Promise<Document> {
       const repo = dataSource.getRepository(Document);
       return repo.save(
         repo.create({
           tenantId,
           studentId,
           type: DocumentType.Identity,
-          status: DocumentStatus.Uploaded,
+          status,
           originalFilename: 'passport.pdf',
           cloudinaryPublicId: `test/${Math.random().toString(36).slice(2, 10)}`,
           url: 'https://res.cloudinary.com/demo/raw/upload/v1/passport.pdf',
@@ -150,7 +150,7 @@ describe('admin: applications', () => {
       );
     }
 
-    it('attaches an admin-uploaded document and clears it from missingDocumentTypes', async () => {
+    it('attaches an admin-uploaded document without clearing it from missingDocumentTypes, until it is approved', async () => {
       const document = await seedUploadedDocument();
       const { token } = await seedAdminSession(app, ['applications.manage']);
 
@@ -160,7 +160,30 @@ describe('admin: applications', () => {
         .expect(200);
 
       expect(response.body.attachedDocumentIds).toContain(document.id);
+      expect(response.body.missingDocumentTypes).toContain('identity');
+
+      await request(app.getHttpServer())
+        .delete(`/v1/admin/applications/${applicationId}/documents/${document.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+    });
+
+    it('clears it from missingDocumentTypes once the attached document is approved', async () => {
+      const document = await seedUploadedDocument(DocumentStatus.Approved);
+      const { token } = await seedAdminSession(app, ['applications.manage']);
+
+      const response = await request(app.getHttpServer())
+        .post(`/v1/admin/applications/${applicationId}/documents/${document.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.attachedDocumentIds).toContain(document.id);
       expect(response.body.missingDocumentTypes).not.toContain('identity');
+
+      await request(app.getHttpServer())
+        .delete(`/v1/admin/applications/${applicationId}/documents/${document.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
     });
 
     it('detaches it again, putting the type back in missingDocumentTypes', async () => {

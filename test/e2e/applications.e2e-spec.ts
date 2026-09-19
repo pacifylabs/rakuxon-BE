@@ -28,7 +28,7 @@ describe('applications', () => {
     return body;
   }
 
-  /** The required document types, all uploaded, for the calling student. */
+  /** The required document types, all approved, for the calling student. */
   async function completeProfileAndDocuments(token: string, userId: string): Promise<void> {
     await request(app.getHttpServer())
       .patch('/v1/students/me')
@@ -55,7 +55,7 @@ describe('applications', () => {
           tenantId: student.tenantId,
           studentId: student.id,
           type,
-          status: DocumentStatus.Uploaded,
+          status: DocumentStatus.Approved,
           originalFilename: `${type}.pdf`,
           cloudinaryPublicId: `test/${Math.random().toString(36).slice(2, 10)}`,
           url: 'https://res.cloudinary.com/demo/raw/upload/v1/doc.pdf',
@@ -192,7 +192,10 @@ describe('applications', () => {
   });
 
   describe('attaching and detaching documents', () => {
-    it('attaches an uploaded document and reflects it in missingDocumentTypes', async () => {
+    it('attaches an uploaded document without clearing its type from missingDocumentTypes, until it is approved', async () => {
+      // Attaching only ever required `uploaded` — the submission gate is
+      // stricter, and requires the admin to have approved it. See
+      // ApplicationsService.withGates().
       const session = await registerStudent();
       const student = await dataSource
         .getRepository(Student)
@@ -221,7 +224,17 @@ describe('applications', () => {
         .expect(200);
 
       expect(attached.body.attachedDocumentIds).toContain(document.id);
-      expect(attached.body.missingDocumentTypes).not.toContain('identity');
+      expect(attached.body.missingDocumentTypes).toContain('identity');
+      expect(attached.body.readyToSubmit).toBe(false);
+
+      await dataSource.getRepository(Document).update(document.id, { status: DocumentStatus.Approved });
+
+      const refetched = await request(app.getHttpServer())
+        .get(`/v1/applications/${created.body.id}`)
+        .set('Authorization', `Bearer ${session.accessToken}`)
+        .expect(200);
+
+      expect(refetched.body.missingDocumentTypes).not.toContain('identity');
 
       const detached = await request(app.getHttpServer())
         .delete(`/v1/applications/${created.body.id}/documents/${document.id}`)
@@ -229,6 +242,38 @@ describe('applications', () => {
         .expect(200);
 
       expect(detached.body.attachedDocumentIds).not.toContain(document.id);
+    });
+
+    it('accepts attaching a document that is already approved', async () => {
+      const session = await registerStudent();
+      const student = await dataSource
+        .getRepository(Student)
+        .findOneOrFail({ where: { userId: session.user.id } });
+
+      const document = await dataSource.getRepository(Document).save(
+        dataSource.getRepository(Document).create({
+          tenantId: student.tenantId,
+          studentId: student.id,
+          type: DocumentType.Identity,
+          status: DocumentStatus.Approved,
+          originalFilename: 'passport.pdf',
+          cloudinaryPublicId: `test/${Math.random().toString(36).slice(2, 10)}`,
+        }),
+      );
+
+      const created = await request(app.getHttpServer())
+        .post('/v1/applications')
+        .set('Authorization', `Bearer ${session.accessToken}`)
+        .send({ courseId: publishedCourseId })
+        .expect(201);
+
+      const attached = await request(app.getHttpServer())
+        .post(`/v1/applications/${created.body.id}/documents/${document.id}`)
+        .set('Authorization', `Bearer ${session.accessToken}`)
+        .expect(200);
+
+      expect(attached.body.attachedDocumentIds).toContain(document.id);
+      expect(attached.body.missingDocumentTypes).not.toContain('identity');
     });
 
     it('refuses to attach a document that is not fully uploaded', async () => {

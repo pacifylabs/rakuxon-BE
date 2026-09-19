@@ -25,10 +25,17 @@ export interface DocumentRejectedMessage {
   reviewUrl: string;
 }
 
+export interface DocumentApprovedMessage {
+  to: string;
+  documentType: string;
+  reviewUrl: string;
+}
+
 export interface NotificationPort {
   sendPasswordReset(message: PasswordResetMessage): Promise<void>;
   sendEmailVerification(message: EmailVerificationMessage): Promise<void>;
   sendDocumentRejected(message: DocumentRejectedMessage): Promise<void>;
+  sendDocumentApproved(message: DocumentApprovedMessage): Promise<void>;
 }
 
 export const NOTIFICATION_PORT = Symbol('NOTIFICATION_PORT');

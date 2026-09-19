@@ -159,4 +159,57 @@ describe('admin: documents', () => {
         .expect(403);
     });
   });
+
+  describe('POST /v1/admin/documents/:id/approve', () => {
+    it('approves the document, notifies the student in-app, and emails them', async () => {
+      const document = await seedDocument();
+      const { token, adminId } = await seedAdminSession(app, ['documents.review']);
+
+      const response = await request(app.getHttpServer())
+        .post(`/v1/admin/documents/${document.id}/approve`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body).toMatchObject({ status: 'approved', rejectionReason: null });
+
+      const dataSource = app.get(DataSource);
+      const saved = await dataSource.getRepository(Document).findOneOrFail({ where: { id: document.id } });
+      expect(saved.reviewedByAdminId).toBe(adminId);
+      expect(saved.reviewedAt).not.toBeNull();
+
+      const inboxRows = await dataSource
+        .getRepository(Notification)
+        .find({ where: { userId: studentUserId, type: 'document_approved' } });
+      expect(inboxRows).toHaveLength(1);
+      expect(inboxRows[0]).toMatchObject({ type: 'document_approved', link: '/dashboard/documents' });
+
+      expect(notifications.documentApprovals).toHaveLength(1);
+      expect(notifications.documentApprovals[0]).toMatchObject({ documentType: 'identity' });
+    });
+
+    it('clears a previous rejection reason on approval', async () => {
+      const document = await seedDocument({
+        status: DocumentStatus.Rejected,
+        rejectionReason: 'The scan is illegible.',
+      });
+      const { token } = await seedAdminSession(app, ['documents.review']);
+
+      const response = await request(app.getHttpServer())
+        .post(`/v1/admin/documents/${document.id}/approve`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body).toMatchObject({ status: 'approved', rejectionReason: null });
+    });
+
+    it('refuses a token without documents.review', async () => {
+      const document = await seedDocument();
+      const { token } = await seedAdminSession(app, []);
+
+      await request(app.getHttpServer())
+        .post(`/v1/admin/documents/${document.id}/approve`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+  });
 });

@@ -191,7 +191,7 @@ export class ApplicationsService {
     const application = await this.ownedDraftApplication(user, applicationId);
     const document = await this.documents.getOwnDocument(user, documentId);
 
-    if (document.status !== DocumentStatus.Uploaded) {
+    if (document.status !== DocumentStatus.Uploaded && document.status !== DocumentStatus.Approved) {
       throw new BadRequestException('Only a fully uploaded document can be attached.');
     }
 
@@ -230,7 +230,7 @@ export class ApplicationsService {
     if (document.studentId !== application.studentId) {
       throw new BadRequestException('That document does not belong to this application\'s student.');
     }
-    if (document.status !== DocumentStatus.Uploaded) {
+    if (document.status !== DocumentStatus.Uploaded && document.status !== DocumentStatus.Approved) {
       throw new BadRequestException('Only a fully uploaded document can be attached.');
     }
 
@@ -313,11 +313,17 @@ export class ApplicationsService {
     return application;
   }
 
+  /**
+   * `readyToSubmit` requires every required type to be *approved*, not
+   * merely attached — attaching only ever required `uploaded`
+   * (`attachDocument`), so a freshly-attached document pending review
+   * still leaves its type in `missingDocumentTypes` here.
+   */
   private async withGates(application: Application): Promise<ApplicationWithGates> {
     const links = await this.applicationDocuments.find({ where: { applicationId: application.id } });
     const attachedDocumentIds = links.map((link) => link.documentId);
 
-    const attached = await this.documents.findUploadedByStudentId(
+    const attached = await this.documents.findApprovedByStudentId(
       application.studentId,
       attachedDocumentIds,
     );
