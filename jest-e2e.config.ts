@@ -4,6 +4,7 @@ import type { Config } from 'jest';
 const config: Config = {
   moduleFileExtensions: ['js', 'json', 'ts'],
   rootDir: '.',
+  modulePathIgnorePatterns: ['<rootDir>/.claude/'],
   testRegex: 'test/e2e/.*\\.e2e-spec\\.ts$',
   transform: { '^.+\\.ts$': ['ts-jest', { tsconfig: 'tsconfig.json' }] },
   testEnvironment: 'node',

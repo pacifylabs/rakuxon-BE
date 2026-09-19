@@ -4,6 +4,7 @@ import type { Config } from 'jest';
 const config: Config = {
   moduleFileExtensions: ['js', 'json', 'ts'],
   rootDir: '.',
+  modulePathIgnorePatterns: ['<rootDir>/.claude/'],
   /* scripts/ too: the import tooling is code that ships behaviour, and the
      helper that survives dropped connections had an untested hole in it. */
   testRegex: '(src|scripts)/.*\\.spec\\.ts$',
