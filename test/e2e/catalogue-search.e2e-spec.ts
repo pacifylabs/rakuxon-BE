@@ -22,14 +22,20 @@ describe('catalogue search', () => {
       INSERT INTO institutions (slug,name,aka,country,"countryCode",city,status) VALUES
         ('probe-manchester','University of Manchester','{UoM}','United Kingdom','GB','Manchester','published'),
         ('probe-vista','Buena Vista University','{}','United States','US','Storm Lake','published'),
-        ('probe-draft','University of Nowhere','{}','United Kingdom','GB','Nowhere','draft');
+        ('probe-draft','University of Nowhere','{}','United Kingdom','GB','Nowhere','draft'),
+        ('probe-unserved','University of Suspendia','{}','Nigeria','NG','Lagos','published');
       INSERT INTO courses (slug,"institutionId",title,level,"durationMonths",overview,disciplines,status)
         SELECT 'probe-course', id, 'MSc Data Science', 'postgraduate', 12, 'Applied data science.',
                '{Computer science}', 'published'
         FROM institutions WHERE slug='probe-manchester';
+      INSERT INTO courses (slug,"institutionId",title,level,"durationMonths",overview,disciplines,status)
+        SELECT 'probe-unserved-course', id, 'MSc Suspendia Studies', 'postgraduate', 12, 'Applied suspendia.',
+               '{Computer science}', 'published'
+        FROM institutions WHERE slug='probe-unserved';
       INSERT INTO articles (slug,title,body,excerpt,"countryCode",status) VALUES
         ('probe-article','The UK student visa, step by step','Body.','A walkthrough.','GB','published'),
-        ('probe-funds','Proof of funds','Most refusals turn on the visa evidence, not the balance.','What is checked.',null,'published');
+        ('probe-funds','Proof of funds','Most refusals turn on the visa evidence, not the balance.','What is checked.',null,'published'),
+        ('probe-unserved-article','Suspendia visa guidance','Body.','A walkthrough.','NG','published');
     `);
   });
 
@@ -89,6 +95,26 @@ describe('catalogue search', () => {
     const order = body.items.map((item: { slug: string }) => item.slug);
 
     expect(order.indexOf('probe-funds')).toBeLessThan(order.indexOf('probe-vista'));
+  });
+
+  it('never returns an institution or course from a country we are not serving', async () => {
+    // isDestination gates the browse listing and the detail page (a direct
+    // link to a disabled country's university 404s); search bypassed it
+    // entirely, so a result here led to a dead end.
+    const institution = await search('suspendia').expect(200);
+    expect(
+      institution.body.items.some((item: { type: string }) => item.type === 'institution'),
+    ).toBe(false);
+
+    const course = await search('suspendia studies').expect(200);
+    expect(course.body.items.some((item: { type: string }) => item.type === 'course')).toBe(false);
+  });
+
+  it('still finds an article about a country we are not serving', async () => {
+    // Guidance content is not gated by isDestination anywhere else either —
+    // it can cover a destination before the catalogue serves it.
+    const { body } = await search('suspendia visa').expect(200);
+    expect(body.items.some((item: { type: string }) => item.type === 'article')).toBe(true);
   });
 
   it('never returns a draft record', async () => {

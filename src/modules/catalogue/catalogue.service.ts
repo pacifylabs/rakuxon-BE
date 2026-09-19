@@ -662,7 +662,9 @@ const MATCHED_ROWS = `
            + word_similarity($2, i.name) * 0.6
            + 0.15 AS rank
   FROM institutions i
+  JOIN countries country ON country.code = i."countryCode"
   WHERE i.status = $3
+    AND country."isDestination" = true
     AND (i."searchVector" @@ to_tsquery('english', $1) OR $2 <% i.name)
 
   UNION ALL
@@ -676,7 +678,9 @@ const MATCHED_ROWS = `
            + 0.05
   FROM courses c
   JOIN institutions inst ON inst.id = c."institutionId"
+  JOIN countries country ON country.code = inst."countryCode"
   WHERE c.status = $3
+    AND country."isDestination" = true
     AND (c."searchVector" @@ to_tsquery('english', $1) OR $2 <% c.title)
 
   UNION ALL
