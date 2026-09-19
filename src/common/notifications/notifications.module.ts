@@ -8,8 +8,10 @@ import { LoggingNotificationAdapter } from './logging-notification.adapter';
 import { MAIL_TRANSPORT } from './mail-transport';
 import type { MailTransport } from './mail-transport';
 import { NOTIFICATION_PORT } from './notification.port';
-import type { NotificationPort } from './notification.port';
+import type { NotificationPort, NotificationTemplateRenderer } from './notification.port';
 import { SmtpNotificationAdapter } from './smtp-notification.adapter';
+import { NotificationTemplatesModule } from '../../modules/notification-templates/notification-templates.module';
+import { NotificationTemplatesService } from '../../modules/notification-templates/notification-templates.service';
 
 const logger = new Logger('NotificationsModule');
 
@@ -38,20 +40,25 @@ function buildTransport(env: Env): MailTransport {
 
 @Global()
 @Module({
+  imports: [NotificationTemplatesModule],
   providers: [
     { provide: MAIL_TRANSPORT, useFactory: buildTransport, inject: [ENV] },
     {
       provide: NOTIFICATION_PORT,
-      useFactory: (env: Env, transport: MailTransport): NotificationPort => {
+      useFactory: (
+        env: Env,
+        transport: MailTransport,
+        templates: NotificationTemplateRenderer,
+      ): NotificationPort => {
         if (smtpConfigured(env)) {
           logger.log(`Sending mail via SMTP (${env.SMTP_HOST}:${env.SMTP_PORT}).`);
-          return new SmtpNotificationAdapter(env, transport);
+          return new SmtpNotificationAdapter(env, transport, templates);
         }
 
         logger.warn('SMTP is not configured; falling back to the logging adapter.');
-        return new LoggingNotificationAdapter(env);
+        return new LoggingNotificationAdapter(env, templates);
       },
-      inject: [ENV, MAIL_TRANSPORT],
+      inject: [ENV, MAIL_TRANSPORT, NotificationTemplatesService],
     },
   ],
   exports: [NOTIFICATION_PORT],

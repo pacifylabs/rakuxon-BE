@@ -12,6 +12,7 @@ import { Course } from '../catalogue/entities/course.entity';
 import { Institution } from '../catalogue/entities/institution.entity';
 import { DocumentsModule } from '../documents/documents.module';
 import { NotificationsInboxModule } from '../notifications-inbox/notifications-inbox.module';
+import { NotificationTemplatesModule } from '../notification-templates/notification-templates.module';
 import { StudentsModule } from '../students/students.module';
 import { Tenant } from '../tenants/entities/tenant.entity';
 
@@ -21,6 +22,7 @@ import { Tenant } from '../tenants/entities/tenant.entity';
     StudentsModule,
     DocumentsModule,
     NotificationsInboxModule,
+    NotificationTemplatesModule,
     AdminAuthModule,
     AuditLogModule,
   ],

@@ -6,6 +6,7 @@ import { CapturingNotifications, createTestApp, truncateIdentity } from '../help
 import { seedAdminSession } from '../helpers/seed-admin';
 import { DocumentStatus, DocumentType } from '../../src/contract/enums';
 import { Document } from '../../src/modules/documents/entities/document.entity';
+import { NotificationTemplate } from '../../src/modules/notification-templates/entities/notification-template.entity';
 import { Notification } from '../../src/modules/notifications-inbox/entities/notification.entity';
 import { Student } from '../../src/modules/students/entities/student.entity';
 
@@ -161,6 +162,23 @@ describe('admin: documents', () => {
   });
 
   describe('POST /v1/admin/documents/:id/approve', () => {
+    it('refuses an unfinished upload without approving it or notifying the student', async () => {
+      const document = await seedDocument({ status: DocumentStatus.PendingUpload, url: null });
+      const { token } = await seedAdminSession(app, ['documents.review']);
+      const emailsBefore = notifications.documentApprovals.length;
+
+      await request(app.getHttpServer())
+        .post(`/v1/admin/documents/${document.id}/approve`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(400);
+
+      const saved = await app.get(DataSource).getRepository(Document)
+        .findOneOrFail({ where: { id: document.id } });
+      expect(saved.status).toBe(DocumentStatus.PendingUpload);
+      expect(saved.reviewedAt).toBeNull();
+      expect(notifications.documentApprovals).toHaveLength(emailsBefore);
+    });
+
     it('approves the document, notifies the student in-app, and emails them', async () => {
       const document = await seedDocument();
       const { token, adminId } = await seedAdminSession(app, ['documents.review']);
@@ -185,6 +203,39 @@ describe('admin: documents', () => {
 
       expect(notifications.documentApprovals).toHaveLength(1);
       expect(notifications.documentApprovals[0]).toMatchObject({ documentType: 'identity' });
+    });
+
+    it("uses an admin-edited notification_templates row for the in-app copy, instead of the hardcoded default", async () => {
+      const document = await seedDocument();
+      const { token } = await seedAdminSession(app, ['documents.review', 'notifications.manage']);
+
+      const dataSource = app.get(DataSource);
+      const templates = dataSource.getRepository(NotificationTemplate);
+      const row = await templates.findOneOrFail({ where: { key: 'document_approved' } });
+
+      try {
+        await request(app.getHttpServer())
+          .patch(`/v1/admin/notification-templates/${row.id}`)
+          .set('Authorization', `Bearer ${token}`)
+          .send({ heading: 'Custom approval heading', body: ['Custom approval body for {{documentType}}.'] })
+          .expect(200);
+
+        await request(app.getHttpServer())
+          .post(`/v1/admin/documents/${document.id}/approve`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(200);
+
+        const inboxRows = await dataSource
+          .getRepository(Notification)
+          .find({ where: { userId: studentUserId, type: 'document_approved' } });
+        const latest = inboxRows[inboxRows.length - 1];
+        expect(latest).toMatchObject({
+          title: 'Custom approval heading',
+          body: 'Custom approval body for identity.',
+        });
+      } finally {
+        await templates.update(row.id, { heading: row.heading, body: row.body, enabled: row.enabled });
+      }
     });
 
     it('clears a previous rejection reason on approval', async () => {

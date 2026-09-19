@@ -20,6 +20,7 @@ import { AdminDashboardModule } from './modules/dashboard/admin-dashboard.module
 import { DestinationsModule } from './modules/destinations/destinations.module';
 import { DocumentsModule } from './modules/documents/documents.module';
 import { NotificationsInboxModule } from './modules/notifications-inbox/notifications-inbox.module';
+import { NotificationTemplatesModule } from './modules/notification-templates/notification-templates.module';
 import { OnboardingLinksModule } from './modules/onboarding-links/onboarding-links.module';
 import { StudentsModule } from './modules/students/students.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
@@ -39,6 +40,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
     OnboardingLinksModule,
     StudentsModule,
     NotificationsInboxModule,
+    NotificationTemplatesModule,
     DocumentsModule,
     ApplicationsModule,
     AuditLogModule,

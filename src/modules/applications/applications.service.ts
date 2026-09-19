@@ -34,6 +34,7 @@ import {
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { DocumentsService } from '../documents/documents.service';
 import { NotificationsInboxService } from '../notifications-inbox/notifications-inbox.service';
+import { NotificationTemplatesService } from '../notification-templates/notification-templates.service';
 import { StudentsService } from '../students/students.service';
 import { Tenant } from '../tenants/entities/tenant.entity';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-request';
@@ -72,6 +73,7 @@ export class ApplicationsService {
     private readonly documents: DocumentsService,
     private readonly auditLog: AuditLogService,
     private readonly inbox: NotificationsInboxService,
+    private readonly templates: NotificationTemplatesService,
     @Inject(NOTIFICATION_PORT) private readonly notifications: NotificationPort,
     @Inject(ENV) private readonly env: Env,
   ) {}
@@ -204,12 +206,18 @@ export class ApplicationsService {
       this.courseAndInstitutionNames(application),
     ]);
     const reviewUrl = `${appUrlForRole(this.env, Role.PlatformAdmin)}/dashboard/applications/${application.id}`;
+    const context = { studentName: studentDetail.fullName, courseName, institutionName, reviewUrl };
+
+    const inApp = await this.templates.renderInApp('case_assigned', context, () => ({
+      title: 'A case was assigned to you',
+      body: `${studentDetail.fullName}'s application for ${courseName} at ${institutionName} is now yours.`,
+    }));
 
     await this.inbox.create({
       adminId: admin.id,
       type: 'case_assigned',
-      title: 'A case was assigned to you',
-      body: `${studentDetail.fullName}'s application for ${courseName} at ${institutionName} is now yours.`,
+      title: inApp.title,
+      body: inApp.body,
       link: `/dashboard/applications/${application.id}`,
     });
 
@@ -342,12 +350,18 @@ export class ApplicationsService {
       this.courseAndInstitutionNames(application),
     ]);
     const reviewUrl = `${appUrlForRole(this.env, Role.Student)}/dashboard/applications/${application.id}`;
+    const context = { courseName, institutionName, reviewUrl };
+
+    const inApp = await this.templates.renderInApp('application_submitted', context, () => ({
+      title: 'Application submitted',
+      body: `Your application for ${courseName} at ${institutionName} has been submitted.`,
+    }));
 
     await this.inbox.create({
       userId: studentDetail.userId,
       type: 'application_submitted',
-      title: 'Application submitted',
-      body: `Your application for ${courseName} at ${institutionName} has been submitted.`,
+      title: inApp.title,
+      body: inApp.body,
       link: `/dashboard/applications/${application.id}`,
     });
 

@@ -1,3 +1,5 @@
+import type { EmailContent } from './templates/layout';
+
 /**
  * How the application reaches a person.
  *
@@ -56,3 +58,29 @@ export interface NotificationPort {
 }
 
 export const NOTIFICATION_PORT = Symbol('NOTIFICATION_PORT');
+
+export interface InAppContent {
+  title: string;
+  body: string;
+}
+
+/**
+ * What `NotificationTemplatesService` looks like from the outside — the
+ * adapters and the in-app call sites only need these two methods, not the
+ * admin CRUD around them. Depending on this interface (rather than the
+ * concrete class in `modules/notification-templates`) keeps `common/` from
+ * reaching into `modules/`, and lets the adapters' unit tests hand in a
+ * one-line fake instead of a real repository.
+ */
+export interface NotificationTemplateRenderer {
+  renderEmail(
+    key: string,
+    context: Record<string, string>,
+    fallback: () => EmailContent,
+  ): Promise<EmailContent>;
+  renderInApp(
+    key: string,
+    context: Record<string, string>,
+    fallback: () => InAppContent,
+  ): Promise<InAppContent>;
+}

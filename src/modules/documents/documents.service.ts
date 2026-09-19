@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { v2 as cloudinary } from 'cloudinary';
 import { In, Repository } from 'typeorm';
@@ -14,6 +14,7 @@ import type { NotificationPort } from '../../common/notifications/notification.p
 import { DocumentStatus, Role } from '../../contract/enums';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { NotificationsInboxService } from '../notifications-inbox/notifications-inbox.service';
+import { NotificationTemplatesService } from '../notification-templates/notification-templates.service';
 import { StudentsService } from '../students/students.service';
 import { cloudinaryCredentials } from '../../common/utils/cloudinary-credentials';
 import type { CloudinaryCredentials } from '../../common/utils/cloudinary-credentials';
@@ -28,6 +29,7 @@ export class DocumentsService {
     @InjectRepository(Document) private readonly documents: Repository<Document>,
     private readonly students: StudentsService,
     private readonly inbox: NotificationsInboxService,
+    private readonly templates: NotificationTemplatesService,
     @Inject(NOTIFICATION_PORT) private readonly notifications: NotificationPort,
     @Inject(ENV) private readonly env: Env,
     private readonly auditLog: AuditLogService,
@@ -235,12 +237,19 @@ export class DocumentsService {
 
     const student = await this.students.getAdminDetail(document.studentId);
     const label = document.type.replace(/_/g, ' ');
+    const reviewUrl = `${appUrlForRole(this.env, Role.Student)}/dashboard/documents`;
+
+    const inApp = await this.templates.renderInApp(
+      'document_rejected',
+      { documentType: label, reason, reviewUrl },
+      () => ({ title: 'A document needs another look', body: `Your ${label} was not accepted: ${reason}` }),
+    );
 
     await this.inbox.create({
       userId: student.userId,
       type: 'document_rejected',
-      title: 'A document needs another look',
-      body: `Your ${label} was not accepted: ${reason}`,
+      title: inApp.title,
+      body: inApp.body,
       link: '/dashboard/documents',
     });
 
@@ -249,7 +258,7 @@ export class DocumentsService {
         to: student.email,
         documentType: label,
         reason,
-        reviewUrl: `${appUrlForRole(this.env, Role.Student)}/dashboard/documents`,
+        reviewUrl,
       });
     } catch (error) {
       this.logger.warn(`Could not send document-rejected email to ${student.email}: ${String(error)}`);
@@ -268,6 +277,9 @@ export class DocumentsService {
   async approve(documentId: string, adminId: string): Promise<Document> {
     const document = await this.documents.findOne({ where: { id: documentId } });
     if (!document) throw new NotFoundException('No document with that id.');
+    if (document.status === DocumentStatus.PendingUpload || !document.url) {
+      throw new BadRequestException('Finish uploading the document before approving it.');
+    }
 
     document.status = DocumentStatus.Approved;
     document.rejectionReason = null;
@@ -277,12 +289,19 @@ export class DocumentsService {
 
     const student = await this.students.getAdminDetail(document.studentId);
     const label = document.type.replace(/_/g, ' ');
+    const reviewUrl = `${appUrlForRole(this.env, Role.Student)}/dashboard/documents`;
+
+    const inApp = await this.templates.renderInApp(
+      'document_approved',
+      { documentType: label, reviewUrl },
+      () => ({ title: 'A document was approved', body: `Your ${label} was reviewed and accepted.` }),
+    );
 
     await this.inbox.create({
       userId: student.userId,
       type: 'document_approved',
-      title: 'A document was approved',
-      body: `Your ${label} was reviewed and accepted.`,
+      title: inApp.title,
+      body: inApp.body,
       link: '/dashboard/documents',
     });
 
@@ -290,7 +309,7 @@ export class DocumentsService {
       await this.notifications.sendDocumentApproved({
         to: student.email,
         documentType: label,
-        reviewUrl: `${appUrlForRole(this.env, Role.Student)}/dashboard/documents`,
+        reviewUrl,
       });
     } catch (error) {
       this.logger.warn(`Could not send document-approved email to ${student.email}: ${String(error)}`);

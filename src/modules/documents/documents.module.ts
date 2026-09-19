@@ -8,6 +8,7 @@ import { Document } from './entities/document.entity';
 import { AdminAuthModule } from '../admin-auth/admin-auth.module';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 import { NotificationsInboxModule } from '../notifications-inbox/notifications-inbox.module';
+import { NotificationTemplatesModule } from '../notification-templates/notification-templates.module';
 import { StudentsModule } from '../students/students.module';
 
 @Module({
@@ -15,6 +16,7 @@ import { StudentsModule } from '../students/students.module';
     TypeOrmModule.forFeature([Document]),
     StudentsModule,
     NotificationsInboxModule,
+    NotificationTemplatesModule,
     AdminAuthModule,
     AuditLogModule,
   ],
