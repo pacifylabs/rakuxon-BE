@@ -300,6 +300,8 @@ describe('messaging', () => {
       expect(draftOnlyList.body).toHaveLength(0);
     });
   });
+
+  describe('presence', () => {
     it('shows counterpart presence after authenticated heartbeats', async () => {
       const session = await registerStudent();
       const { token: adminToken, adminId } = await seedAdminSession(app, ['applications.manage']);
@@ -307,27 +309,36 @@ describe('messaging', () => {
 
       const before = await request(app.getHttpServer())
         .get('/v1/messages/assigned-admins')
-        .set('Authorization', `Bearer ${session.accessToken}`).expect(200);
+        .set('Authorization', `Bearer ${session.accessToken}`)
+        .expect(200);
       expect(before.body.find((row: { id: string }) => row.id === adminId).online).toBe(false);
 
-      await request(app.getHttpServer()).post('/v1/admin/account/me/heartbeat')
-        .set('Authorization', `Bearer ${adminToken}`).expect(204);
-      await request(app.getHttpServer()).post('/v1/students/me/heartbeat')
-        .set('Authorization', `Bearer ${session.accessToken}`).expect(204);
+      await request(app.getHttpServer())
+        .post('/v1/admin/account/me/heartbeat')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(204);
+      await request(app.getHttpServer())
+        .post('/v1/students/me/heartbeat')
+        .set('Authorization', `Bearer ${session.accessToken}`)
+        .expect(204);
 
       const after = await request(app.getHttpServer())
         .get('/v1/messages/assigned-admins')
-        .set('Authorization', `Bearer ${session.accessToken}`).expect(200);
+        .set('Authorization', `Bearer ${session.accessToken}`)
+        .expect(200);
       expect(after.body.find((row: { id: string }) => row.id === adminId).online).toBe(true);
 
       const started = await request(app.getHttpServer())
         .post('/v1/messages/conversations')
         .set('Authorization', `Bearer ${session.accessToken}`)
-        .send({ adminId, body: 'Presence check.' }).expect(200);
+        .send({ adminId, body: 'Presence check.' })
+        .expect(200);
       expect(started.body.counterpartOnline).toBe(true);
+
       const detail = await request(app.getHttpServer())
         .get(`/v1/admin/messages/conversations/${started.body.id}`)
-        .set('Authorization', `Bearer ${adminToken}`).expect(200);
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
       expect(detail.body.counterpartOnline).toBe(true);
     });
 
@@ -335,6 +346,5 @@ describe('messaging', () => {
       await request(app.getHttpServer()).post('/v1/admin/account/me/heartbeat').expect(401);
       await request(app.getHttpServer()).post('/v1/students/me/heartbeat').expect(401);
     });
-
-
+  });
 });
