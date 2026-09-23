@@ -82,6 +82,43 @@ export class StudentsService {
     return this.getAdminDetail(studentId);
   }
 
+  /**
+   * An agency bringing in a student directly, without an invite link. Unlike
+   * `createByAdmin`, `emailVerifiedAt` is left unset — an agency is a lower
+   * trust tier than a platform admin, so the student still confirms their
+   * own address, the same way self-registration works. The caller sends the
+   * verification email once the transaction commits, since that isn't this
+   * service's concern (see `AgencyService.createStudent`).
+   */
+  async createByAgency(
+    tenantId: string,
+    dto: { email: string; firstName: string; lastName: string; password: string },
+  ): Promise<{ studentId: string; user: User }> {
+    const passwordHash = await this.passwords.hash(dto.password);
+
+    return this.dataSource.transaction(async (m) => {
+      if (await m.exists(User, { where: { tenantId, email: dto.email } })) {
+        throw new ConflictException('That email is already registered.');
+      }
+
+      const user = await m.save(
+        User,
+        m.create(User, {
+          tenantId,
+          email: dto.email,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          passwordHash,
+          role: Role.Student,
+          status: UserStatus.Active,
+        }),
+      );
+
+      const student = await m.save(Student, m.create(Student, { tenantId, userId: user.id }));
+      return { studentId: student.id, user };
+    });
+  }
+
   /** An admin setting a student's password directly — a reset done for them, not by them. */
   async setPassword(id: string, password: string): Promise<void> {
     const student = await this.students.findOne({ where: { id } });
@@ -94,6 +131,13 @@ export class StudentsService {
   /** A cheap, frequent poll — updates `lastSeenAt` only, never a full entity save. */
   async heartbeat(user: AuthenticatedUser): Promise<void> {
     await this.users.update({ id: user.id }, { lastSeenAt: new Date() });
+  }
+
+  /** Internal cross-service lookup by the student's own id (not userId) — e.g. submitting on a student's behalf. */
+  async getById(id: string): Promise<Student> {
+    const student = await this.students.findOne({ where: { id } });
+    if (!student) throw new NotFoundException('No student with that id.');
+    return student;
   }
 
   async getOwnProfile(user: AuthenticatedUser): Promise<Student> {

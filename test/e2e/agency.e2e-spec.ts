@@ -179,6 +179,58 @@ describe('agency: partner-app self-service', () => {
     });
   });
 
+  describe('bringing a student in directly', () => {
+    it('creates the student in the caller\'s own tenant, unverified', async () => {
+      const email = `direct-${Math.random().toString(36).slice(2, 8)}@example.com`;
+
+      const response = await request(app.getHttpServer())
+        .post('/v1/agency/students')
+        .set('Authorization', `Bearer ${adminATokenA}`)
+        .send({ email, firstName: 'New', lastName: 'Direct', password: 'correct-horse-battery' })
+        .expect(201);
+
+      expect(response.body).toMatchObject({ email, tenantId: tenantAId });
+
+      const row = await dataSource
+        .getRepository(User)
+        .findOne({ where: { email, tenantId: tenantAId } });
+      expect(row?.emailVerifiedAt).toBeNull();
+
+      // The password is real — the student can sign in with it immediately.
+      await request(app.getHttpServer())
+        .post('/v1/auth/login')
+        .send({ email, password: 'correct-horse-battery' })
+        .expect(200);
+    });
+
+    it("refuses an email already registered in the caller's tenant", async () => {
+      const email = `dup-${Math.random().toString(36).slice(2, 8)}@example.com`;
+      await request(app.getHttpServer())
+        .post('/v1/agency/students')
+        .set('Authorization', `Bearer ${adminATokenA}`)
+        .send({ email, firstName: 'First', lastName: 'One', password: 'correct-horse-battery' })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post('/v1/agency/students')
+        .set('Authorization', `Bearer ${adminATokenA}`)
+        .send({ email, firstName: 'Second', lastName: 'One', password: 'correct-horse-battery' })
+        .expect(409);
+    });
+
+    it('refuses an unauthenticated caller', async () => {
+      await request(app.getHttpServer())
+        .post('/v1/agency/students')
+        .send({
+          email: 'nope@example.com',
+          firstName: 'No',
+          lastName: 'Auth',
+          password: 'correct-horse-battery',
+        })
+        .expect(401);
+    });
+  });
+
   describe('applications', () => {
     it("lists only the caller's own tenant's applications", async () => {
       const response = await request(app.getHttpServer())
@@ -255,6 +307,99 @@ describe('agency: partner-app self-service', () => {
         .post(`/v1/agency/documents/00000000-0000-0000-0000-000000000000/approve`)
         .set('Authorization', `Bearer ${adminATokenA}`)
         .expect(404);
+    });
+
+    describe('submitting on a student\'s behalf', () => {
+      async function readyToSubmitApplication() {
+        const student = await registerStudentInTenant(tenantAId);
+        await request(app.getHttpServer())
+          .patch('/v1/students/me')
+          .set('Authorization', `Bearer ${student.accessToken}`)
+          .send({
+            dateOfBirth: '2000-01-01',
+            nationality: 'NG',
+            phone: '+2348012345678',
+            intendedStudyLevel: 'postgraduate',
+            intendedCountry: 'GB',
+            preferredIntake: '2026-09',
+            educationHistory: [{ institutionName: 'Prior School', qualification: 'BSc' }],
+          })
+          .expect(200);
+
+        const courseId = (
+          await dataSource.query(`SELECT id FROM courses WHERE slug = 'agency-probe-course'`)
+        )[0].id;
+        const created = await request(app.getHttpServer())
+          .post('/v1/applications')
+          .set('Authorization', `Bearer ${student.accessToken}`)
+          .send({ courseId })
+          .expect(201);
+        const appId = created.body.id as string;
+
+        for (const type of [
+          DocumentType.Identity,
+          DocumentType.AcademicCertificate,
+          DocumentType.EnglishTest,
+        ]) {
+          const document = await dataSource.getRepository(Document).save(
+            dataSource.getRepository(Document).create({
+              tenantId: tenantAId,
+              studentId: student.studentId,
+              type,
+              status: DocumentStatus.Approved,
+              originalFilename: 'file.pdf',
+              cloudinaryPublicId: `test/${Math.random().toString(36).slice(2, 10)}`,
+              url: 'https://res.cloudinary.com/demo/raw/upload/v1/file.pdf',
+            }),
+          );
+          await request(app.getHttpServer())
+            .post(`/v1/agency/applications/${appId}/documents/${document.id}`)
+            .set('Authorization', `Bearer ${adminATokenA}`)
+            .expect(200);
+        }
+
+        return appId;
+      }
+
+      it('submits once the profile is complete and every document is approved', async () => {
+        const appId = await readyToSubmitApplication();
+
+        const response = await request(app.getHttpServer())
+          .post(`/v1/agency/applications/${appId}/submit`)
+          .set('Authorization', `Bearer ${adminATokenA}`)
+          .expect(200);
+
+        expect(response.body.status).toBe('submitted');
+        expect(response.body.submittedAt).not.toBeNull();
+      });
+
+      it('refuses a second submission', async () => {
+        const appId = await readyToSubmitApplication();
+        await request(app.getHttpServer())
+          .post(`/v1/agency/applications/${appId}/submit`)
+          .set('Authorization', `Bearer ${adminATokenA}`)
+          .expect(200);
+
+        await request(app.getHttpServer())
+          .post(`/v1/agency/applications/${appId}/submit`)
+          .set('Authorization', `Bearer ${adminATokenA}`)
+          .expect(409);
+      });
+
+      it('refuses a draft still missing a required document', async () => {
+        await request(app.getHttpServer())
+          .post(`/v1/agency/applications/${applicationAId}/submit`)
+          .set('Authorization', `Bearer ${adminATokenA}`)
+          .expect(400);
+      });
+
+      it("404s for another agency's application", async () => {
+        const appId = await readyToSubmitApplication();
+        await request(app.getHttpServer())
+          .post(`/v1/agency/applications/${appId}/submit`)
+          .set('Authorization', `Bearer ${adminBTokenB}`)
+          .expect(404);
+      });
     });
   });
 

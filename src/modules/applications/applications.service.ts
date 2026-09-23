@@ -353,7 +353,24 @@ export class ApplicationsService {
 
   async submit(user: AuthenticatedUser, applicationId: string): Promise<ApplicationWithGates> {
     const application = await this.ownedApplication(user, applicationId);
+    const result = await this.submitApplication(application);
+    await this.logStudentAction(user, application.id, 'application.submit', 'Submitted the application.');
+    return result;
+  }
 
+  /**
+   * An agency submitting a draft on a student's behalf — same ownership gate
+   * and the same submission rules `submit()` enforces, just reached via the
+   * caller's tenant instead of a signed-in student. No audit log entry:
+   * matches `attachDocumentForTenant`/`detachDocumentForTenant`, neither of
+   * which log to the student-actor audit trail either.
+   */
+  async submitForTenant(tenantId: string, applicationId: string): Promise<ApplicationWithGates> {
+    const entry = await this.getForTenant(tenantId, applicationId);
+    return this.submitApplication(entry.application);
+  }
+
+  private async submitApplication(application: Application): Promise<ApplicationWithGates> {
     /* Not idempotent: a resubmission is a conflict, the same way a spent
        onboarding-link token is — replaying a state transition means
        something different than replaying a side-effect-free read. */
@@ -361,7 +378,7 @@ export class ApplicationsService {
       throw new ConflictException('This application has already been submitted.');
     }
 
-    const student = await this.students.getOwnProfile(user);
+    const student = await this.students.getById(application.studentId);
     if (!student.profileCompletedAt) {
       throw new BadRequestException('Complete your profile before submitting an application.');
     }
@@ -375,7 +392,6 @@ export class ApplicationsService {
     application.status = ApplicationStatus.Submitted;
     application.submittedAt = new Date();
     const saved = await this.applications.save(application);
-    await this.logStudentAction(user, saved.id, 'application.submit', 'Submitted the application.');
     await this.notifyApplicationSubmitted(saved);
 
     if (!saved.assignedAdminId) {

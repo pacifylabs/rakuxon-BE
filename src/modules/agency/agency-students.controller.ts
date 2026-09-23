@@ -1,7 +1,8 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { ApiBearerAuth, ApiConflictResponse, ApiCreatedResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { AgencyService } from './agency.service';
+import { CreateAgencyStudentDto } from './dto/agency.dto';
 import { DocumentDto } from '../documents/dto/document.dto';
 import { AdminStudentDetailDto, AdminStudentListDto, ListAdminStudentsQueryDto } from '../students/dto/admin-student.dto';
 import { CurrentUser } from '../../common/auth/current-user.decorator';
@@ -10,10 +11,11 @@ import { AGENCY_ROLES } from '../../contract/enums';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-request';
 
 /**
- * The agency's own referred students. Read-only — an agency edits its
- * relationship with a student (staff, invites, referrals), never the
- * applicant profile itself; that stays the student's own or, on their
- * behalf, a platform admin's (`AdminStudentsController`).
+ * The agency's own referred students. Mostly read-only — an agency can
+ * bring a student in directly (`POST`), the same way an invite link would,
+ * but cannot edit the applicant profile itself once it exists; that stays
+ * the student's own or, on their behalf, a platform admin's
+ * (`AdminStudentsController`).
  */
 @ApiTags('agency-students')
 @ApiBearerAuth('access-token')
@@ -30,6 +32,17 @@ export class AgencyStudentsController {
     @Query() query: ListAdminStudentsQueryDto,
   ): Promise<AdminStudentListDto> {
     return this.agency.listStudents(user.tenantId!, query);
+  }
+
+  @Post()
+  @ApiOperation({ summary: 'Bring a student directly into the caller\'s own agency' })
+  @ApiCreatedResponse({ type: AdminStudentDetailDto })
+  @ApiConflictResponse({ description: 'That email is already registered in this agency.' })
+  create(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateAgencyStudentDto,
+  ): Promise<AdminStudentDetailDto> {
+    return this.agency.createStudent(user.tenantId!, dto);
   }
 
   @Get(':id')

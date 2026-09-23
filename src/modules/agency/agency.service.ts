@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Not, Repository } from 'typeorm';
 
-import { AgencyDashboardSummaryDto, CreateAgencyStaffDto } from './dto/agency.dto';
+import { AgencyDashboardSummaryDto, CreateAgencyStaffDto, CreateAgencyStudentDto } from './dto/agency.dto';
 import type {
   AdminApplicationDetailDto,
   AdminApplicationListDto,
@@ -10,6 +10,7 @@ import type {
 } from '../applications/dto/admin-application.dto';
 import { ApplicationsService } from '../applications/applications.service';
 import { Application } from '../applications/entities/application.entity';
+import { AuthService } from '../auth/auth.service';
 import { DocumentDto } from '../documents/dto/document.dto';
 import type { Document } from '../documents/entities/document.entity';
 import { DocumentsService } from '../documents/documents.service';
@@ -33,6 +34,7 @@ export class AgencyService {
     private readonly applicationsService: ApplicationsService,
     private readonly tenants: TenantsService,
     private readonly documents: DocumentsService,
+    private readonly auth: AuthService,
   ) {}
 
   /* -------------------------------------------------------------- dashboard */
@@ -80,6 +82,13 @@ export class AgencyService {
       throw new NotFoundException('No student with that id.');
     }
     return student;
+  }
+
+  /** A student the agency already has, brought in directly — no invite link round trip. */
+  async createStudent(tenantId: string, dto: CreateAgencyStudentDto): Promise<AdminStudentDetailDto> {
+    const { studentId, user } = await this.studentsService.createByAgency(tenantId, dto);
+    await this.auth.sendVerificationEmailBestEffort(user);
+    return this.studentsService.getAdminDetail(studentId);
   }
 
   /**
@@ -143,6 +152,11 @@ export class AgencyService {
     return this.toDetail(
       await this.applicationsService.detachDocumentForTenant(tenantId, applicationId, documentId),
     );
+  }
+
+  /** Submitting a draft on a student's behalf — same rules `submit()` enforces for the student themselves. */
+  async submitApplication(tenantId: string, applicationId: string): Promise<AdminApplicationDetailDto> {
+    return this.toDetail(await this.applicationsService.submitForTenant(tenantId, applicationId));
   }
 
   private async toDetail(

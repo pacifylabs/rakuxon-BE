@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Inject,
   Param,
+  Patch,
   Post,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -24,6 +25,7 @@ import { AuthService } from './auth.service';
 import {
   AuthTokensDto,
   AuthUserDto,
+  ChangeMyPasswordDto,
   ConfirmEmailVerificationDto,
   ConfirmPasswordResetDto,
   LoginDto,
@@ -32,6 +34,7 @@ import {
   RegisterStudentDto,
   RequestPasswordResetDto,
   SsoCallbackDto,
+  UpdateMyProfileDto,
 } from './dto/auth.dto';
 import { SSO_PROVIDERS } from './sso/sso.port';
 import type { SsoProvider } from './sso/sso.port';
@@ -207,5 +210,29 @@ export class AuthController {
     const current = await this.auth.getCurrentUser(user.id);
     if (!current) throw new UnauthorizedException('That account no longer exists.');
     return current;
+  }
+
+  @Patch('me')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: "Update the caller's own name" })
+  @ApiOkResponse({ type: AuthUserDto })
+  async updateMe(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdateMyProfileDto,
+  ): Promise<AuthUserDto> {
+    return this.auth.updateOwnProfile(user.id, dto);
+  }
+
+  @Post('me/change-password')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: "Change the caller's own password" })
+  @ApiNoContentResponse()
+  @ApiUnauthorizedResponse({ description: 'The current password is not correct.' })
+  async changeMyPassword(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: ChangeMyPasswordDto,
+  ): Promise<void> {
+    await this.auth.changeOwnPassword(user.id, dto);
   }
 }

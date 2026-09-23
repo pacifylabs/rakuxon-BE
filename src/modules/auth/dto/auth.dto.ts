@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsNotEmpty, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 
 import { Role } from '../../../contract/enums';
 import { IsNotDisposableEmail } from '../../../common/validators/is-not-disposable-email.decorator';
@@ -164,6 +164,33 @@ export class ConfirmEmailVerificationDto {
   @IsString()
   @IsNotEmpty()
   token!: string;
+}
+
+export class UpdateMyProfileDto {
+  @ApiPropertyOptional({ example: 'Ada' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  firstName?: string;
+
+  @ApiPropertyOptional({ example: 'Lovelace' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  lastName?: string;
+}
+
+export class ChangeMyPasswordDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  currentPassword!: string;
+
+  @ApiProperty({ example: 'a-brand-new-passphrase', minLength: PASSWORD_MIN })
+  @IsString()
+  @MinLength(PASSWORD_MIN)
+  @MaxLength(256)
+  newPassword!: string;
 }
 
 export class SsoCallbackDto {

@@ -257,4 +257,78 @@ describe('auth', () => {
         .expect(401);
     });
   });
+
+  describe('PATCH /v1/auth/me', () => {
+    it("updates the caller's own name", async () => {
+      const created = await register().expect(201);
+
+      const response = await request(app.getHttpServer())
+        .patch('/v1/auth/me')
+        .set('Authorization', `Bearer ${created.body.accessToken}`)
+        .send({ firstName: 'Grace', lastName: 'Hopper' })
+        .expect(200);
+
+      expect(response.body).toMatchObject({ firstName: 'Grace', lastName: 'Hopper' });
+    });
+
+    it('leaves a field untouched when the request omits it', async () => {
+      const created = await register().expect(201);
+
+      const response = await request(app.getHttpServer())
+        .patch('/v1/auth/me')
+        .set('Authorization', `Bearer ${created.body.accessToken}`)
+        .send({ firstName: 'Grace' })
+        .expect(200);
+
+      expect(response.body).toMatchObject({ firstName: 'Grace', lastName: 'Lovelace' });
+    });
+
+    it('refuses an unauthenticated caller', async () => {
+      await request(app.getHttpServer()).patch('/v1/auth/me').send({ firstName: 'Grace' }).expect(401);
+    });
+  });
+
+  describe('POST /v1/auth/me/change-password', () => {
+    it('changes the password and the new one signs in afterwards', async () => {
+      const created = await register().expect(201);
+
+      await request(app.getHttpServer())
+        .post('/v1/auth/me/change-password')
+        .set('Authorization', `Bearer ${created.body.accessToken}`)
+        .send({ currentPassword: 'correct-horse-battery', newPassword: 'a-brand-new-passphrase' })
+        .expect(204);
+
+      await request(app.getHttpServer())
+        .post('/v1/auth/login')
+        .send({ email: created.body.user.email, password: 'a-brand-new-passphrase' })
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .post('/v1/auth/login')
+        .send({ email: created.body.user.email, password: 'correct-horse-battery' })
+        .expect(401);
+    });
+
+    it('refuses a wrong current password, and leaves the real one in place', async () => {
+      const created = await register().expect(201);
+
+      await request(app.getHttpServer())
+        .post('/v1/auth/me/change-password')
+        .set('Authorization', `Bearer ${created.body.accessToken}`)
+        .send({ currentPassword: 'not-the-real-password', newPassword: 'a-brand-new-passphrase' })
+        .expect(401);
+
+      await request(app.getHttpServer())
+        .post('/v1/auth/login')
+        .send({ email: created.body.user.email, password: 'correct-horse-battery' })
+        .expect(200);
+    });
+
+    it('refuses an unauthenticated caller', async () => {
+      await request(app.getHttpServer())
+        .post('/v1/auth/me/change-password')
+        .send({ currentPassword: 'x', newPassword: 'a-brand-new-passphrase' })
+        .expect(401);
+    });
+  });
 });

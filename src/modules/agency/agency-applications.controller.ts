@@ -1,5 +1,13 @@
 import { Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiBearerAuth,
+  ApiConflictResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 
 import { AgencyService } from './agency.service';
 import {
@@ -70,5 +78,18 @@ export class AgencyApplicationsController {
     @Param('documentId') documentId: string,
   ): Promise<AdminApplicationDetailDto> {
     return this.agency.detachDocument(user.tenantId!, id, documentId);
+  }
+
+  @Post(':id/submit')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Submit a draft application on the student's behalf" })
+  @ApiOkResponse({ type: AdminApplicationDetailDto })
+  @ApiConflictResponse({ description: 'This application has already been submitted.' })
+  @ApiBadRequestResponse({ description: 'The profile is incomplete or a required document is missing.' })
+  submit(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ): Promise<AdminApplicationDetailDto> {
+    return this.agency.submitApplication(user.tenantId!, id);
   }
 }

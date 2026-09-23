@@ -56,3 +56,38 @@ export class CreateAgencyStaffDto {
   @MaxLength(256)
   password!: string;
 }
+
+/**
+ * An agency bringing a student in directly, without an invite link — for
+ * one the agency already has elsewhere. Unlike `AdminCreateStudentDto`, no
+ * `tenantId` field: it's always the caller's own, forced server-side. The
+ * account starts unverified — see `StudentsService.createByAgency`'s own
+ * doc comment for why that differs from the platform-admin equivalent.
+ */
+export class CreateAgencyStudentDto {
+  @ApiProperty({ example: 'student@example.com' })
+  @IsEmail()
+  email!: string;
+
+  @ApiProperty({ example: 'Grace' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(60)
+  firstName!: string;
+
+  @ApiProperty({ example: 'Hopper' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(60)
+  lastName!: string;
+
+  @ApiProperty({
+    example: 'correct-horse-battery',
+    minLength: PASSWORD_MIN,
+    description: 'A temporary password the student can change via the reset flow.',
+  })
+  @IsString()
+  @MinLength(PASSWORD_MIN)
+  @MaxLength(256)
+  password!: string;
+}

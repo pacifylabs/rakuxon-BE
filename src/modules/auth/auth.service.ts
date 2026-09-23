@@ -21,13 +21,14 @@ import { appUrlForRole } from '../../common/config/env.schema';
 import type { Env } from '../../common/config/env.schema';
 import { NOTIFICATION_PORT } from '../../common/notifications/notification.port';
 import type { NotificationPort } from '../../common/notifications/notification.port';
+import { definedEntries } from '../../common/utils/defined-entries';
 import { HOUSE_TENANT_ID } from '../../contract/constants';
 import { Role, TenantStatus, UserStatus } from '../../contract/enums';
 import type { SsoProfile } from './sso/sso.port';
 import { Student } from '../students/entities/student.entity';
 import { Tenant } from '../tenants/entities/tenant.entity';
 import { User } from '../users/entities/user.entity';
-import type { AuthTokensDto, AuthUserDto } from './dto/auth.dto';
+import type { AuthTokensDto, AuthUserDto, ChangeMyPasswordDto, UpdateMyProfileDto } from './dto/auth.dto';
 
 /** Repositories bound to a transaction that has the identity context set. */
 interface IdentityRepositories {
@@ -330,14 +331,17 @@ export class AuthService {
 
   /**
    * Issues a fresh verification link and emails it. Called right after
-   * registration, and by the resend endpoint for whoever lost the first one.
+   * registration, by the resend endpoint for whoever lost the first one, and
+   * by `AgencyService.createStudent` for a student an agency brought in
+   * directly (unlike an admin-created student, that account isn't vouched
+   * for, so it still needs its own verification path).
    *
    * Best-effort: a notification failure here must not fail registration —
    * the account and its session are already real by the time this runs, so
    * the worst outcome of a broken mail transport is an unverified address,
    * not a lost account.
    */
-  private async sendVerificationEmailBestEffort(user: User): Promise<void> {
+  async sendVerificationEmailBestEffort(user: User): Promise<void> {
     try {
       const token = randomBytes(32).toString('base64url');
       /* A day, not an hour like a password reset: verifying an address is
@@ -391,6 +395,33 @@ export class AuthService {
       tenantId: found.tenantId,
       emailVerifiedAt: found.emailVerifiedAt?.toISOString() ?? null,
     };
+  }
+
+  /** Any authenticated role updating their own name — mirrors `AdminAccountService.updateProfile`. */
+  async updateOwnProfile(userId: string, patch: UpdateMyProfileDto): Promise<AuthUserDto> {
+    await this.inTransaction(({ users }) => users.update({ id: userId }, definedEntries(patch)));
+
+    const updated = await this.getCurrentUser(userId);
+    if (!updated) throw new UnauthorizedException('That account no longer exists.');
+    return updated;
+  }
+
+  /** Any authenticated role changing their own password — mirrors `AdminAccountService.changePassword`. */
+  async changeOwnPassword(userId: string, dto: ChangeMyPasswordDto): Promise<void> {
+    const user = await this.inTransaction(({ users }) =>
+      users
+        .createQueryBuilder('user')
+        .addSelect('user.passwordHash')
+        .where('user.id = :id', { id: userId })
+        .getOne(),
+    );
+    if (!user) throw new UnauthorizedException('That account no longer exists.');
+
+    const valid = await this.passwords.verify(user.passwordHash, dto.currentPassword);
+    if (!valid) throw new UnauthorizedException('Your current password is not correct.');
+
+    const passwordHash = await this.passwords.hash(dto.newPassword);
+    await this.inTransaction(({ users }) => users.update({ id: userId }, { passwordHash }));
   }
 
   /**
