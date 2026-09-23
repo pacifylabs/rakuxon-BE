@@ -24,6 +24,11 @@ export class ListAdminApplicationsQueryDto {
   @Matches(UUID_SHAPE, { message: 'tenantId must be a UUID' })
   tenantId?: string;
 
+  @ApiPropertyOptional({ type: String, format: 'uuid' })
+  @IsOptional()
+  @Matches(UUID_SHAPE, { message: 'studentId must be a UUID' })
+  studentId?: string;
+
   @ApiPropertyOptional({ default: 1, minimum: 1 })
   @IsOptional()
   @Transform(({ value }) => Number(value))

@@ -189,6 +189,18 @@ describe('agency: partner-app self-service', () => {
       expect(response.body.items.some((item: { id: string }) => item.id === applicationAId)).toBe(true);
     });
 
+    it('filters by studentId, for a student detail screen', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/v1/agency/applications?studentId=${studentAId}`)
+        .set('Authorization', `Bearer ${adminATokenA}`)
+        .expect(200);
+
+      expect(response.body.items.every((item: { id: string }) => item.id === applicationAId)).toBe(
+        true,
+      );
+      expect(response.body.items.length).toBeGreaterThan(0);
+    });
+
     it("404s for another agency's application", async () => {
       await request(app.getHttpServer())
         .get(`/v1/agency/applications/${applicationAId}`)

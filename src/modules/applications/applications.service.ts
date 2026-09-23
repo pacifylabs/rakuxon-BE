@@ -157,7 +157,13 @@ export class ApplicationsService {
    * never accidentally be relaxed by a change made for the admin path.
    */
   async listAdmin(
-    query: { status?: ApplicationStatus; tenantId?: string; page?: number; limit?: number },
+    query: {
+      status?: ApplicationStatus;
+      tenantId?: string;
+      studentId?: string;
+      page?: number;
+      limit?: number;
+    },
   ): Promise<{ items: Application[]; total: number; page: number; pageCount: number }> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 24;
@@ -165,6 +171,7 @@ export class ApplicationsService {
     const builder = this.applications.createQueryBuilder('a');
     if (query.status) builder.andWhere('a.status = :status', { status: query.status });
     if (query.tenantId) builder.andWhere('a."tenantId" = :tenantId', { tenantId: query.tenantId });
+    if (query.studentId) builder.andWhere('a."studentId" = :studentId', { studentId: query.studentId });
 
     builder.orderBy('a.createdAt', 'DESC').skip((page - 1) * limit).take(limit);
 
