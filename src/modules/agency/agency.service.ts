@@ -10,6 +10,9 @@ import type {
 } from '../applications/dto/admin-application.dto';
 import { ApplicationsService } from '../applications/applications.service';
 import { Application } from '../applications/entities/application.entity';
+import { DocumentDto } from '../documents/dto/document.dto';
+import type { Document } from '../documents/entities/document.entity';
+import { DocumentsService } from '../documents/documents.service';
 import type {
   AdminStudentDetailDto,
   AdminStudentListDto,
@@ -29,6 +32,7 @@ export class AgencyService {
     private readonly studentsService: StudentsService,
     private readonly applicationsService: ApplicationsService,
     private readonly tenants: TenantsService,
+    private readonly documents: DocumentsService,
   ) {}
 
   /* -------------------------------------------------------------- dashboard */
@@ -76,6 +80,32 @@ export class AgencyService {
       throw new NotFoundException('No student with that id.');
     }
     return student;
+  }
+
+  /**
+   * So the attach-document screen has something to attach — an agency has
+   * no other way to see what a student has uploaded, since `/documents` is
+   * student-only and `/admin/students/:id/documents` sits behind the
+   * separate admin-permission system. Read-only: reject/approve/upload
+   * stay platform-admin actions.
+   */
+  async listStudentDocuments(tenantId: string, studentId: string): Promise<DocumentDto[]> {
+    await this.getStudent(tenantId, studentId);
+    return (await this.documents.listForAdmin(studentId)).map((document) => this.toDocumentDto(document));
+  }
+
+  private toDocumentDto(document: Document): DocumentDto {
+    return {
+      id: document.id,
+      type: document.type,
+      status: document.status,
+      originalFilename: document.originalFilename,
+      url: document.url,
+      bytes: document.bytes,
+      mimeType: document.mimeType,
+      rejectionReason: document.rejectionReason,
+      createdAt: document.createdAt.toISOString(),
+    };
   }
 
   /* ------------------------------------------------------------ applications */

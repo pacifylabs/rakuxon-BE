@@ -2,6 +2,7 @@ import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { AgencyService } from './agency.service';
+import { DocumentDto } from '../documents/dto/document.dto';
 import { AdminStudentDetailDto, AdminStudentListDto, ListAdminStudentsQueryDto } from '../students/dto/admin-student.dto';
 import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { Roles } from '../../common/rbac/roles.decorator';
@@ -40,5 +41,16 @@ export class AgencyStudentsController {
     @Param('id') id: string,
   ): Promise<AdminStudentDetailDto> {
     return this.agency.getStudent(user.tenantId!, id);
+  }
+
+  @Get(':id/documents')
+  @ApiOperation({ summary: "One of the caller's own agency's students' uploaded documents" })
+  @ApiOkResponse({ type: [DocumentDto] })
+  @ApiNotFoundResponse({ description: 'No student with that id.' })
+  listDocuments(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ): Promise<DocumentDto[]> {
+    return this.agency.listStudentDocuments(user.tenantId!, id);
   }
 }

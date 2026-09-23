@@ -209,6 +209,17 @@ describe('agency: partner-app self-service', () => {
         }),
       );
 
+      const listed = await request(app.getHttpServer())
+        .get(`/v1/agency/students/${studentAId}/documents`)
+        .set('Authorization', `Bearer ${adminATokenA}`)
+        .expect(200);
+      expect(listed.body.some((entry: { id: string }) => entry.id === document.id)).toBe(true);
+
+      await request(app.getHttpServer())
+        .get(`/v1/agency/students/${studentAId}/documents`)
+        .set('Authorization', `Bearer ${adminBTokenB}`)
+        .expect(404);
+
       const attached = await request(app.getHttpServer())
         .post(`/v1/agency/applications/${applicationAId}/documents/${document.id}`)
         .set('Authorization', `Bearer ${adminATokenA}`)
