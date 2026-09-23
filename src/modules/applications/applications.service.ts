@@ -180,6 +180,41 @@ export class ApplicationsService {
   }
 
   /**
+   * The agency-facing equivalent of `getAdmin` — same lookup, plus the one
+   * check a platform admin never needs: this application actually belongs
+   * to the caller's own tenant. Not found, not forbidden, for a
+   * cross-tenant id — whether another agency's application exists at all
+   * is not something an agency should be able to probe for.
+   */
+  async getForTenant(tenantId: string, id: string): Promise<ApplicationWithGates> {
+    const entry = await this.getAdmin(id);
+    if (entry.application.tenantId !== tenantId) {
+      throw new NotFoundException('No application with that id.');
+    }
+    return entry;
+  }
+
+  /** Same ownership gate as `getForTenant`, then delegates to the existing admin action. */
+  async attachDocumentForTenant(
+    tenantId: string,
+    applicationId: string,
+    documentId: string,
+  ): Promise<ApplicationWithGates> {
+    await this.getForTenant(tenantId, applicationId);
+    return this.attachDocumentAdmin(applicationId, documentId);
+  }
+
+  /** Same ownership gate as `getForTenant`, then delegates to the existing admin action. */
+  async detachDocumentForTenant(
+    tenantId: string,
+    applicationId: string,
+    documentId: string,
+  ): Promise<ApplicationWithGates> {
+    await this.getForTenant(tenantId, applicationId);
+    return this.detachDocumentAdmin(applicationId, documentId);
+  }
+
+  /**
    * Who currently owns working this application — not a review decision, so
    * it's allowed regardless of status (a submitted application still needs
    * a caseworker). `adminId: null` unassigns.

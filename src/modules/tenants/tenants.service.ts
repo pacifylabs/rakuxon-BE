@@ -124,6 +124,15 @@ export class TenantsService {
     await adminSetPassword(this.dataSource, user.id, passwordHash);
   }
 
+  /** Suspending/reactivating a staff account — same shape as `AdminsService.suspend`/`.reactivate`, scoped to one tenant's own staff. */
+  async setStaffStatus(tenantId: string, userId: string, status: UserStatus): Promise<TenantStaffDto> {
+    const user = await this.users.findOne({ where: { id: userId, tenantId, role: In(AGENCY_ROLES) } });
+    if (!user) throw new NotFoundException('No staff member with that id at this partner.');
+
+    user.status = status;
+    return this.staffToDto(await this.users.save(user));
+  }
+
   async list(query: ListTenantsQueryDto): Promise<TenantListDto> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 24;

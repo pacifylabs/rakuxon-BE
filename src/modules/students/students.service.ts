@@ -210,6 +210,10 @@ export class StudentsService {
       });
     }
 
+    if (query.tenantId) {
+      builder.andWhere('s."tenantId" = :tenantId', { tenantId: query.tenantId });
+    }
+
     const total = await builder.getCount();
 
     const rows = await builder

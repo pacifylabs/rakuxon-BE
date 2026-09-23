@@ -11,6 +11,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   MaxLength,
   Max,
   Min,
@@ -23,11 +24,24 @@ import { StudyLevel } from '../../../contract/enums';
 
 const PASSWORD_MIN = 8;
 
+/*
+ * A UUID shape, not `@IsUUID()`: the house tenant's id (HOUSE_TENANT_ID,
+ * src/contract/constants.ts) is a fixed, all-zero-version-nibble constant
+ * that fails class-validator's strict version check — see
+ * `admin-application.dto.ts`'s `tenantId` filter for the same reasoning.
+ */
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export class ListAdminStudentsQueryDto {
   @ApiPropertyOptional({ description: 'Free text over the student’s name or email.' })
   @IsOptional()
   @IsString()
   q?: string;
+
+  @ApiPropertyOptional({ type: String, format: 'uuid' })
+  @IsOptional()
+  @Matches(UUID_SHAPE, { message: 'tenantId must be a UUID' })
+  tenantId?: string;
 
   @ApiPropertyOptional({ default: 1, minimum: 1 })
   @IsOptional()

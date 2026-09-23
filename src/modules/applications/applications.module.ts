@@ -28,5 +28,6 @@ import { Tenant } from '../tenants/entities/tenant.entity';
   ],
   controllers: [ApplicationsController, AdminApplicationsController],
   providers: [ApplicationsService],
+  exports: [ApplicationsService],
 })
 export class ApplicationsModule {}
