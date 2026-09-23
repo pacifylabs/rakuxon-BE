@@ -102,6 +102,85 @@ describe('admin: applications', () => {
     expect(byTenant.body.items.some((item: { id: string }) => item.id === applicationId)).toBe(true);
   });
 
+  describe('reference code', () => {
+    it('carries a human-readable, unique reference code on both the list row and the detail', async () => {
+      const { token } = await seedAdminSession(app, ['applications.view']);
+
+      const list = await request(app.getHttpServer())
+        .get('/v1/admin/applications')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      const row = list.body.items.find((item: { id: string }) => item.id === applicationId);
+      expect(row.referenceCode).toMatch(/^R\d{2}-\d{4}$/);
+
+      const detail = await request(app.getHttpServer())
+        .get(`/v1/admin/applications/${applicationId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(detail.body.referenceCode).toBe(row.referenceCode);
+    });
+
+    it('is searchable via q, and finds nothing for a code that does not exist', async () => {
+      const { token } = await seedAdminSession(app, ['applications.view']);
+
+      const detail = await request(app.getHttpServer())
+        .get(`/v1/admin/applications/${applicationId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      const code: string = detail.body.referenceCode;
+
+      const found = await request(app.getHttpServer())
+        .get(`/v1/admin/applications?q=${code}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(found.body.items.some((item: { id: string }) => item.id === applicationId)).toBe(true);
+
+      // Case-insensitive and partial — a counselor reading a code aloud won't always get the case right.
+      const partial = await request(app.getHttpServer())
+        .get(`/v1/admin/applications?q=${code.toLowerCase().slice(1)}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(partial.body.items.some((item: { id: string }) => item.id === applicationId)).toBe(true);
+
+      const missing = await request(app.getHttpServer())
+        .get('/v1/admin/applications?q=R00-9999')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(missing.body.items).toHaveLength(0);
+    });
+
+    it('assigns distinct, sequential codes to applications created back to back', async () => {
+      const session = await request(app.getHttpServer())
+        .post('/v1/auth/register/student')
+        .send({
+          email: `ref-seq-${Math.random().toString(36).slice(2, 8)}@example.com`,
+          firstName: 'Ref',
+          lastName: 'Sequence',
+          password: 'correct-horse-battery',
+        })
+        .expect(201);
+      const courseId = (
+        await dataSource.query(`SELECT id FROM courses WHERE slug = 'admin-probe-app-course'`)
+      )[0].id;
+
+      const first = await request(app.getHttpServer())
+        .post('/v1/applications')
+        .set('Authorization', `Bearer ${session.body.accessToken}`)
+        .send({ courseId })
+        .expect(201);
+      const second = await request(app.getHttpServer())
+        .post('/v1/applications')
+        .set('Authorization', `Bearer ${session.body.accessToken}`)
+        .send({ courseId })
+        .expect(201);
+
+      expect(first.body.referenceCode).not.toBe(second.body.referenceCode);
+      const firstSeq = Number(first.body.referenceCode.split('-')[1]);
+      const secondSeq = Number(second.body.referenceCode.split('-')[1]);
+      expect(secondSeq).toBe(firstSeq + 1);
+    });
+  });
+
   it('returns the full document gates on the single-item route', async () => {
     const { token } = await seedAdminSession(app, ['applications.view']);
 

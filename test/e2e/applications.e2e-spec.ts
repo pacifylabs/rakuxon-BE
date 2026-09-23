@@ -56,7 +56,14 @@ describe('applications', () => {
       .findOneOrFail({ where: { userId } });
 
     const documentsRepo = dataSource.getRepository(Document);
-    for (const type of [DocumentType.Identity, DocumentType.AcademicCertificate, DocumentType.EnglishTest]) {
+    for (const type of [
+      DocumentType.Identity,
+      DocumentType.AcademicCertificate,
+      DocumentType.AcademicTranscript,
+      DocumentType.RecommendationLetter,
+      DocumentType.CvResume,
+      DocumentType.SeniorSecondaryMarksheet,
+    ]) {
       await documentsRepo.save(
         documentsRepo.create({
           tenantId: student.tenantId,
@@ -125,7 +132,14 @@ describe('applications', () => {
         readyToSubmit: false,
       });
       expect(response.body.missingDocumentTypes.sort()).toEqual(
-        ['academic_certificate', 'english_test', 'identity'].sort(),
+        [
+          'academic_certificate',
+          'academic_transcript',
+          'cv_resume',
+          'identity',
+          'recommendation_letter',
+          'senior_secondary_marksheet',
+        ].sort(),
       );
     });
 

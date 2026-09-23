@@ -40,15 +40,22 @@ import { Tenant } from '../tenants/entities/tenant.entity';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-request';
 
 /**
- * What a course actually asks most applicants for. Institution-specific
- * requirements (catalogue's own `requiredDocuments` per course) are a richer
- * future source of truth than this fixed list — see the plan's note on
- * widening this once that wiring exists.
+ * What every application requires, per the client's own compulsory-documents
+ * list: international passport, degree/HND/ND certificate and transcript, a
+ * recommendation letter, a resume, and a WAEC/NECO certificate (mapped onto
+ * the closest existing type — a senior secondary result is what WAEC/NECO
+ * actually issues). Institution-specific requirements (catalogue's own
+ * `requiredDocuments` per course) are a richer future source of truth than
+ * this fixed list — see the plan's note on widening this once that wiring
+ * exists.
  */
 const REQUIRED_DOCUMENT_TYPES = [
   DocumentType.Identity,
   DocumentType.AcademicCertificate,
-  DocumentType.EnglishTest,
+  DocumentType.AcademicTranscript,
+  DocumentType.RecommendationLetter,
+  DocumentType.CvResume,
+  DocumentType.SeniorSecondaryMarksheet,
 ];
 
 export interface ApplicationWithGates {
@@ -130,10 +137,28 @@ export class ApplicationsService {
         studentId: student.id,
         courseId: course.id,
         institutionId: course.institutionId,
+        referenceCode: await this.nextReferenceCode(),
       }),
     );
 
     return this.withGates(saved);
+  }
+
+  /**
+   * `R26-0001` — sequential per calendar year, shared across every tenant.
+   * The upsert is a single atomic statement, so two applications created in
+   * the same instant still get distinct, gap-free-in-order numbers with no
+   * locking of our own.
+   */
+  private async nextReferenceCode(): Promise<string> {
+    const year = new Date().getUTCFullYear();
+    const [row] = await this.applications.manager.query<{ lastValue: number }[]>(
+      `INSERT INTO application_reference_counters ("year", "lastValue") VALUES ($1, 1)
+       ON CONFLICT ("year") DO UPDATE SET "lastValue" = application_reference_counters."lastValue" + 1
+       RETURNING "lastValue"`,
+      [year],
+    );
+    return `R${String(year % 100).padStart(2, '0')}-${String(row!.lastValue).padStart(4, '0')}`;
   }
 
   async list(user: AuthenticatedUser): Promise<ApplicationWithGates[]> {
@@ -161,6 +186,7 @@ export class ApplicationsService {
       status?: ApplicationStatus;
       tenantId?: string;
       studentId?: string;
+      q?: string;
       page?: number;
       limit?: number;
     },
@@ -172,6 +198,9 @@ export class ApplicationsService {
     if (query.status) builder.andWhere('a.status = :status', { status: query.status });
     if (query.tenantId) builder.andWhere('a."tenantId" = :tenantId', { tenantId: query.tenantId });
     if (query.studentId) builder.andWhere('a."studentId" = :studentId', { studentId: query.studentId });
+    if (query.q?.trim()) {
+      builder.andWhere('a."referenceCode" ILIKE :q', { q: `%${query.q.trim()}%` });
+    }
 
     builder.orderBy('a.createdAt', 'DESC').skip((page - 1) * limit).take(limit);
 
@@ -580,6 +609,7 @@ export class ApplicationsService {
     const adminNames = new Map(admins.map(admin => [admin.id, `${admin.firstName} ${admin.lastName}`]));
     return applications.map((row) => ({
       id: row.id,
+      referenceCode: row.referenceCode,
       tenantId: row.tenantId,
       tenantName: tenantNameById.get(row.tenantId) ?? 'Unknown tenant',
       assignedAdminId: row.assignedAdminId ?? null,

@@ -339,7 +339,10 @@ describe('agency: partner-app self-service', () => {
         for (const type of [
           DocumentType.Identity,
           DocumentType.AcademicCertificate,
-          DocumentType.EnglishTest,
+          DocumentType.AcademicTranscript,
+          DocumentType.RecommendationLetter,
+          DocumentType.CvResume,
+          DocumentType.SeniorSecondaryMarksheet,
         ]) {
           const document = await dataSource.getRepository(Document).save(
             dataSource.getRepository(Document).create({

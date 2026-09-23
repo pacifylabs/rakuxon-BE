@@ -89,6 +89,7 @@ export class ApplicationsController {
   private toDto(entry: ApplicationWithGates): ApplicationDto {
     return {
       id: entry.application.id,
+      referenceCode: entry.application.referenceCode,
       courseId: entry.application.courseId,
       institutionId: entry.application.institutionId,
       status: entry.application.status,

@@ -41,6 +41,14 @@ export class Application {
   @Column({ type: 'uuid' })
   institutionId!: string;
 
+  /**
+   * A human-readable code (`R26-0001`) — searchable and readable in a way a
+   * UUID isn't. Assigned once, at creation, from
+   * `application_reference_counters`; never regenerated or reused.
+   */
+  @Column({ type: 'text', unique: true })
+  referenceCode!: string;
+
   @Column({ type: 'enum', enum: ApplicationStatus, enumName: 'application_status_enum', default: ApplicationStatus.Draft })
   status!: ApplicationStatus;
 

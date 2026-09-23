@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsUUID, Matches, Max, Min, ValidateIf } from 'class-validator';
+import { IsEnum, IsInt, IsOptional, IsString, IsUUID, Matches, Max, Min, ValidateIf } from 'class-validator';
 
 import { ApplicationStatus, DocumentType } from '../../../contract/enums';
 
@@ -29,6 +29,11 @@ export class ListAdminApplicationsQueryDto {
   @Matches(UUID_SHAPE, { message: 'studentId must be a UUID' })
   studentId?: string;
 
+  @ApiPropertyOptional({ example: 'R26-0001', description: "Free text over the application's reference code." })
+  @IsOptional()
+  @IsString()
+  q?: string;
+
   @ApiPropertyOptional({ default: 1, minimum: 1 })
   @IsOptional()
   @Transform(({ value }) => Number(value))
@@ -54,6 +59,7 @@ export class ListAdminApplicationsQueryDto {
  */
 export class AdminApplicationSummaryDto {
   @ApiProperty({ type: String, format: 'uuid' }) id!: string;
+  @ApiProperty({ example: 'R26-0001' }) referenceCode!: string;
   @ApiProperty({ type: String, format: 'uuid' }) tenantId!: string;
   @ApiProperty() tenantName!: string;
   @ApiProperty({ type: String, format: 'uuid' }) studentId!: string;

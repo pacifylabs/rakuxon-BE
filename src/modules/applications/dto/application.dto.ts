@@ -13,6 +13,9 @@ export class ApplicationDto {
   @ApiProperty({ type: String, format: 'uuid' })
   id!: string;
 
+  @ApiProperty({ example: 'R26-0001', description: 'Human-readable code — searchable, readable over the phone.' })
+  referenceCode!: string;
+
   @ApiProperty({ type: String, format: 'uuid' })
   courseId!: string;
 
