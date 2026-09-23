@@ -48,6 +48,32 @@ export class OnboardingLinkDto {
   expiresAt!: string;
 }
 
+/** No `url` — it was returned once, at issue time, and only its hash was kept. */
+export class OnboardingLinkSummaryDto {
+  @ApiProperty({ type: String, format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ example: 'student@example.com' })
+  inviteeEmail!: string;
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  expiresAt!: string;
+
+  @ApiProperty({ type: String, format: 'date-time', nullable: true })
+  consumedAt!: string | null;
+
+  @ApiProperty({ type: String, format: 'date-time', nullable: true })
+  revokedAt!: string | null;
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  createdAt!: string;
+}
+
+export class OnboardingLinkListDto {
+  @ApiProperty({ type: [OnboardingLinkSummaryDto] })
+  items!: OnboardingLinkSummaryDto[];
+}
+
 export class ConsumeOnboardingLinkDto {
   @ApiProperty({ description: 'The token from the invitation link.' })
   @IsString()

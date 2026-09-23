@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiConflictResponse,
@@ -16,6 +16,7 @@ import {
   ConsumedLinkDto,
   IssueOnboardingLinkDto,
   OnboardingLinkDto,
+  OnboardingLinkListDto,
   PeekedLinkDto,
   PeekOnboardingLinkDto,
   RegisterViaOnboardingLinkDto,
@@ -58,6 +59,15 @@ export class OnboardingLinksController {
       inviteeEmail: dto.inviteeEmail,
       expiresInDays: dto.expiresInDays,
     });
+  }
+
+  @Get()
+  @Roles(Role.AgencyAdmin, Role.Counselor)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: "The caller's own agency's invitation links" })
+  @ApiOkResponse({ type: OnboardingLinkListDto })
+  async list(@CurrentUser() user: AuthenticatedUser): Promise<OnboardingLinkListDto> {
+    return { items: await this.links.list(user.tenantId as string) };
   }
 
   @Public()

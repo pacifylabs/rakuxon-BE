@@ -126,6 +126,65 @@ describe('onboarding links', () => {
     });
   });
 
+  describe('listing', () => {
+    it("lists the caller's own agency's links, newest first, without a url", async () => {
+      const first = await issue(adminToken, { inviteeEmail: 'list-a@example.com' }).expect(201);
+      const second = await issue(adminToken, { inviteeEmail: 'list-b@example.com' }).expect(201);
+
+      const response = await request(app.getHttpServer())
+        .get('/v1/onboarding-links')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+
+      const ids = response.body.items.map((item: { id: string }) => item.id);
+      expect(ids.indexOf(second.body.id)).toBeLessThan(ids.indexOf(first.body.id));
+      expect(response.body.items[0]).not.toHaveProperty('url');
+    });
+
+    it('reflects consumed and revoked state', async () => {
+      const consumed = await issue(adminToken, { inviteeEmail: 'list-consumed@example.com' }).expect(201);
+      const token = consumed.body.url.split('/invite/')[1];
+      await request(app.getHttpServer()).post('/v1/onboarding-links/consume').send({ token }).expect(200);
+
+      const revoked = await issue(adminToken, { inviteeEmail: 'list-revoked@example.com' }).expect(201);
+      await request(app.getHttpServer())
+        .delete(`/v1/onboarding-links/${revoked.body.id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(204);
+
+      const response = await request(app.getHttpServer())
+        .get('/v1/onboarding-links')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+
+      const items = response.body.items as Array<{ id: string; consumedAt: string | null; revokedAt: string | null }>;
+      expect(items.find((item) => item.id === consumed.body.id)?.consumedAt).not.toBeNull();
+      expect(items.find((item) => item.id === revoked.body.id)?.revokedAt).not.toBeNull();
+    });
+
+    it("does not include another agency's links", async () => {
+      const other = await registerAgency();
+      await request(app.getHttpServer())
+        .post('/v1/onboarding-links')
+        .set('Authorization', `Bearer ${other.accessToken}`)
+        .send({ inviteeEmail: 'other-agency@example.com' })
+        .expect(403); // pending tenant — issuing is gated, so seed the row directly instead.
+
+      const issued = await issue(adminToken, { inviteeEmail: 'mine@example.com' }).expect(201);
+
+      const response = await request(app.getHttpServer())
+        .get('/v1/onboarding-links')
+        .set('Authorization', `Bearer ${other.accessToken}`)
+        .expect(200);
+
+      expect(response.body.items.some((item: { id: string }) => item.id === issued.body.id)).toBe(false);
+    });
+
+    it('refuses an unauthenticated caller', async () => {
+      await request(app.getHttpServer()).get('/v1/onboarding-links').expect(401);
+    });
+  });
+
   describe('consuming', () => {
     it('redeems a valid link without authentication', async () => {
       const issued = await issue(adminToken).expect(201);

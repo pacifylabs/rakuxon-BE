@@ -12,6 +12,7 @@ import { TenantStatus } from '../../contract/enums';
 import type {
   ConsumedLinkDto,
   OnboardingLinkDto,
+  OnboardingLinkSummaryDto,
   PeekedLinkDto,
 } from './dto/onboarding-link.dto';
 
@@ -77,6 +78,19 @@ export class OnboardingLinksService {
       inviteeEmail: saved.inviteeEmail,
       expiresAt: saved.expiresAt.toISOString(),
     };
+  }
+
+  /** Every invitation the caller's own agency has issued, newest first. No `url` — see the DTO. */
+  async list(tenantId: string): Promise<OnboardingLinkSummaryDto[]> {
+    const links = await this.links.find({ where: { tenantId }, order: { createdAt: 'DESC' } });
+    return links.map((link) => ({
+      id: link.id,
+      inviteeEmail: link.inviteeEmail,
+      expiresAt: link.expiresAt.toISOString(),
+      consumedAt: link.consumedAt?.toISOString() ?? null,
+      revokedAt: link.revokedAt?.toISOString() ?? null,
+      createdAt: link.createdAt.toISOString(),
+    }));
   }
 
   /**
