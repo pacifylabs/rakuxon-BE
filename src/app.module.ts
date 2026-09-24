@@ -20,6 +20,7 @@ import { CatalogueModule } from './modules/catalogue/catalogue.module';
 import { AdminDashboardModule } from './modules/dashboard/admin-dashboard.module';
 import { DestinationsModule } from './modules/destinations/destinations.module';
 import { DocumentsModule } from './modules/documents/documents.module';
+import { MediaAssetsModule } from './modules/media-assets/media-assets.module';
 import { MessagingModule } from './modules/messaging/messaging.module';
 import { NotificationsInboxModule } from './modules/notifications-inbox/notifications-inbox.module';
 import { NotificationTemplatesModule } from './modules/notification-templates/notification-templates.module';
@@ -57,6 +58,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
     SiteSettingsModule,
     UploadsModule,
     DestinationsModule,
+    MediaAssetsModule,
   ],
   providers: [
     SyncIndexesService,

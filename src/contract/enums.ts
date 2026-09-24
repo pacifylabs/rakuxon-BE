@@ -117,3 +117,12 @@ export enum ApplicationStatus {
   Draft = 'draft',
   Submitted = 'submitted',
 }
+
+/* ---------------------------------------------------------------- media */
+
+export enum MediaAssetCategory {
+  SocialToolkit = 'social_toolkit',
+  BrandAsset = 'brand_asset',
+  Design = 'design',
+  Other = 'other',
+}

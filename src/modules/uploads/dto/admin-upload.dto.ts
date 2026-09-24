@@ -2,7 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsIn } from 'class-validator';
 
 /** Where the uploaded image will be used — namespaces the Cloudinary public id, nothing more. */
-export const ADMIN_UPLOAD_FOLDERS = ['testimonials', 'institutions', 'articles', 'site-settings', 'destinations'] as const;
+export const ADMIN_UPLOAD_FOLDERS = ['testimonials', 'institutions', 'articles', 'site-settings', 'destinations', 'media-assets'] as const;
 export type AdminUploadFolder = (typeof ADMIN_UPLOAD_FOLDERS)[number];
 
 export class AdminUploadSignatureRequestDto {
