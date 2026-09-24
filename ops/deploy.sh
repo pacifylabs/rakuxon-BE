@@ -48,6 +48,7 @@ rollback() {
 trap rollback ERR
 if [[ "$component" == backend ]]; then
   "${compose[@]}" run --rm --no-deps migrate
+  "${compose[@]}" run --rm --no-deps migrate node dist/database/seed-super-admin-permissions.js
 fi
 "${compose[@]}" up -d --no-build --wait --wait-timeout 180 "${services[@]}"
 "${compose[@]}" up -d --no-build --no-deps --force-recreate --wait --wait-timeout 60 gateway
