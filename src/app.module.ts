@@ -14,6 +14,7 @@ import { AdminAuthModule } from './modules/admin-auth/admin-auth.module';
 import { AdminsModule } from './modules/admins/admins.module';
 import { AgencyModule } from './modules/agency/agency.module';
 import { ApplicationsModule } from './modules/applications/applications.module';
+import { AttendanceModule } from './modules/attendance/attendance.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CatalogueModule } from './modules/catalogue/catalogue.module';
@@ -59,6 +60,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
     UploadsModule,
     DestinationsModule,
     MediaAssetsModule,
+    AttendanceModule,
   ],
   providers: [
     SyncIndexesService,
